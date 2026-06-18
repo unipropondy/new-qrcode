@@ -73,6 +73,16 @@ body {
   outline: none;
 }
 
+.status-btn{
+  background: #fe7a38;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .badge {
   position: absolute;
   top: -5px;
