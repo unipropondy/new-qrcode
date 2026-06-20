@@ -1373,17 +1373,17 @@ const completeOrder = async (posOrderId, amount) => {
                 </div>
               </div>
 
-              {/* <button
-                className="payment-btn"
-                onClick={() => {
-                  setShowPaymentPopup(false);
-                  setShowOnlinePayment(true);
-                }}
-              >
-                Pay Online
-              </button>*/}
-
             <button
+              className="payment-btn"
+              onClick={() => {
+                setShowPaymentPopup(false);
+                alert("Currently Not Available");
+              }}
+            >
+              Pay Online
+            </button>
+
+            {/* <button
                   className="payment-btn"
                   onClick={async () => {
                     setShowPaymentPopup(false);
@@ -1414,7 +1414,7 @@ const completeOrder = async (posOrderId, amount) => {
                   }}
                 >
                   Pay Online
-                </button>
+                </button> */}
 
             </div>
 
