@@ -7,6 +7,7 @@ import {
   Routes,
   Route
 } from "react-router-dom";
+import PullToRefresh from 'react-simple-pull-to-refresh';
 
 import SettlementSuccess from "./SettlementSuccess";
 
@@ -970,6 +971,13 @@ const completeOrder = async (posOrderId, amount) => {
     </div>
   );
 
+  const handleRefresh = async () => {
+    await loadKitchens();
+    if (tableId) {
+      await loadCart(tableId);
+    }
+  };
+
   const totalAmount
     = cart.reduce((s, i) => s +
       (Number(i.Price || i.price || 0) *
@@ -984,6 +992,7 @@ const completeOrder = async (posOrderId, amount) => {
       element={
 
         // <div className="pos-app">
+    <PullToRefresh onRefresh={handleRefresh} backgroundColor="#f97316" pullingContent={""}>
     <div className="pos-app">
       {isCartLoading && (
         <div className="modal-overlay" style={{ zIndex: 99999, flexDirection: 'column', cursor: 'wait' }}>
@@ -1883,6 +1892,7 @@ const completeOrder = async (posOrderId, amount) => {
         </div>
       )}
           </div>
+          </PullToRefresh>
       }
     />
 
