@@ -120,11 +120,12 @@ function App() {
       const res = await fetch(`${API}/kitchens`);
       const data = await res.json();
 
-      setCategories(data);
+      const safeData = Array.isArray(data) ? data : [];
+      setCategories(safeData);
 
-      if (data.length > 0) {
-        setActiveCategory(data[0].CategoryId);
-        loadGroups(data[0].CategoryId);
+      if (safeData.length > 0) {
+        setActiveCategory(safeData[0].CategoryId);
+        loadGroups(safeData[0].CategoryId);
       }
     } catch (err) {
       console.log(err);
@@ -206,11 +207,11 @@ function App() {
       //     (item.DishId || item.id) === dish.DishId
       // );
 
-    const existing = prev.find(
-  (item) =>
-    (item.DishId || item.id) === dish.DishId &&
-    item.status !== "SENT"
-);
+      const existing = prev.find(
+        (item) =>
+          (item.DishId || item.id) === dish.DishId &&
+          item.status !== "SENT"
+      );
       // already exists
       if (existing) {
         return prev.map((item) =>
@@ -338,171 +339,139 @@ function App() {
 
   };
 
- // Online payment flow using YeahPay demo
+  // Online payment flow using YeahPay demo
 
   const handlePayOnline = async () => {
     // Calculate total amount inside the function
-    const totalAmount = cart.reduce((s, i) => 
-        s + (Number(i.Price || i.price || 0) * Number(i.qty || 1)), 0
+    const totalAmount = cart.reduce((s, i) =>
+      s + (Number(i.Price || i.price || 0) * Number(i.qty || 1)), 0
     ).toFixed(2);
-    
+
     console.log("Opening payment for amount:", totalAmount);
     console.log("POS Order ID:", currentOrderId);
-    
+
     // Pass the real POS orderId as posOrderId so we can use it on success
     // (YeahPay generates its own orderId which does NOT match our DB OrderNumber)
     const demoUrl = `https://yeahpay-demo-production.up.railway.app?amount=${totalAmount}&orderId=${currentOrderId}&posOrderId=${encodeURIComponent(currentOrderId)}&from=pos`;
-    
+
     const paymentWindow = window.open(demoUrl, '_blank', 'width=500,height=700');
-    
+
     if (!paymentWindow) {
-        alert("Popup blocked! Please allow popups for this site.");
-        return;
+      alert("Popup blocked! Please allow popups for this site.");
+      return;
     }
-    
+
     // Capture the POS orderId at time of opening (closure)
     const posOrderIdAtOpen = currentOrderId;
 
     // Listen for payment success message
     const handleMessage = (event) => {
-        if (event.data.type === 'YEAHPAY_PAYMENT_SUCCESS') {
-            console.log("Payment success message received:", event.data);
-            
-            // Remove event listener
-            window.removeEventListener('message', handleMessage);
-            
-            // Use the real POS orderId (posOrderId from event, or fallback to captured one)
-            // The YeahPay demo may send back posOrderId if it forwards it; otherwise use our captured value
-            const realPosOrderId = event.data.posOrderId || posOrderIdAtOpen;
-            console.log("Using POS OrderId for DB update:", realPosOrderId);
+      if (event.data.type === 'YEAHPAY_PAYMENT_SUCCESS') {
+        console.log("Payment success message received:", event.data);
 
-            // Complete the order using the real POS orderId
-            completeOrder(realPosOrderId, totalAmount);
-            
-            // Close the payment window
-            if (paymentWindow) paymentWindow.close();
-        }
+        // Remove event listener
+        window.removeEventListener('message', handleMessage);
+
+        // Use the real POS orderId (posOrderId from event, or fallback to captured one)
+        // The YeahPay demo may send back posOrderId if it forwards it; otherwise use our captured value
+        const realPosOrderId = event.data.posOrderId || posOrderIdAtOpen;
+        console.log("Using POS OrderId for DB update:", realPosOrderId);
+
+        // Complete the order using the real POS orderId
+        completeOrder(realPosOrderId, totalAmount);
+
+        // Close the payment window
+        if (paymentWindow) paymentWindow.close();
+      }
     };
-    
+
     window.addEventListener('message', handleMessage);
-};
+  };
 
-// const completeOrder = async (orderId, amount) => {
-//     try {
-//         const res = await fetch(`${API}/sales/save`, {
-//             method: "POST",
-//             headers: { "Content-Type": "application/json" },
-//             body: JSON.stringify({
-//                 orderId: orderId,
-//                 tableNo: tableNo,
-//                 tableId: tableId,
-//                 subTotal: parseFloat(amount),
-//                 totalAmount: parseFloat(amount),
-//                 paymentMethod: "ONLINE",
-//                 items: cart.map((item) => ({
-//                     id: item.DishId || item.id,
-//                     name: item.Name || item.name,
-//                     qty: Number(item.qty || 1),
-//                     price: Number(item.Price || item.price || 0)
-//                 }))
-//             })
-//         });
-        
-//         const data = await res.json();
-//         if (data.success) {
-//             // Clear cart
-//             setCart([]);
-//             // Show success message
-//             handlePaymentSuccess(`Payment Successful! Amount: S$${amount}`);
-//             // Redirect to settlement success
-//             setTimeout(() => {
-//                 window.location.href = `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${orderId}`;
-//             }, 1500);
-//         } else {
-//             alert(data.error || "Payment Failed");
-//         }
-//     } catch (err) {
-//         console.log("COMPLETE ORDER ERROR:", err);
-//         alert("Server Error: " + err.message);
-//     }
-// };
+  // const completeOrder = async (orderId, amount) => {
+  //     try {
+  //         const res = await fetch(`${API}/sales/save`, {
+  //             method: "POST",
+  //             headers: { "Content-Type": "application/json" },
+  //             body: JSON.stringify({
+  //                 orderId: orderId,
+  //                 tableNo: tableNo,
+  //                 tableId: tableId,
+  //                 subTotal: parseFloat(amount),
+  //                 totalAmount: parseFloat(amount),
+  //                 paymentMethod: "ONLINE",
+  //                 items: cart.map((item) => ({
+  //                     id: item.DishId || item.id,
+  //                     name: item.Name || item.name,
+  //                     qty: Number(item.qty || 1),
+  //                     price: Number(item.Price || item.price || 0)
+  //                 }))
+  //             })
+  //         });
 
-const completeOrder = async (posOrderId, amount) => {
-  try {
+  //         const data = await res.json();
+  //         if (data.success) {
+  //             // Clear cart
+  //             setCart([]);
+  //             // Show success message
+  //             handlePaymentSuccess(`Payment Successful! Amount: S$${amount}`);
+  //             // Redirect to settlement success
+  //             setTimeout(() => {
+  //                 window.location.href = `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${orderId}`;
+  //             }, 1500);
+  //         } else {
+  //             alert(data.error || "Payment Failed");
+  //         }
+  //     } catch (err) {
+  //         console.log("COMPLETE ORDER ERROR:", err);
+  //         alert("Server Error: " + err.message);
+  //     }
+  // };
 
-    console.log("[completeOrder] Using POS orderId:", posOrderId, "Amount:", amount);
+  const completeOrder = async (posOrderId, amount) => {
+    try {
+      console.log("[completeOrder] Using POS orderId:", posOrderId, "Amount:", amount);
 
-    // 1. UPDATE RestaurantOrderDetailCur StatusCode = 2 (SENT) for all items in this order
-    const markSentRes = await fetch(`${API}/order/mark-sent`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        orderId: posOrderId
-      })
-    });
-    const markSentData = await markSentRes.json();
-    console.log("[mark-sent] RestaurantOrderDetailCur StatusCode=2 update:", markSentData);
+      // CALL UNIFIED BACKEND ROUTE
+      const res = await fetch(`${API}/order/complete-online-payment`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          orderId: posOrderId,
+          tableNo: tableNo,
+          tableId: tableId,
+          totalAmount: parseFloat(amount),
+          paymentMethod: "ONLINE",
+          cart: cart
+        })
+      });
 
-    // 2. SAVE SALES
-    const res = await fetch(`${API}/sales/save`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        orderId: posOrderId,
-        tableNo: tableNo,
-        tableId: tableId,
-        subTotal: parseFloat(amount),
-        totalAmount: parseFloat(amount),
-        paymentMethod: "ONLINE",
-        items: cart.map((item) => ({
-          id: item.DishId || item.id,
-          name: item.Name || item.name,
-          qty: Number(item.qty || 1),
-          price: Number(item.Price || item.price || 0)
-        }))
-      })
-    });
+      const data = await res.json();
+      console.log("UNIFIED COMPLETE PAYMENT RESPONSE:", data);
 
-    const data = await res.json();
-    console.log("SALES SAVE:", data);
+      if (!data.success) {
+        alert(data.error || "Settlement Failed");
+        return;
+      }
 
-    if (!data.success) {
-      alert(data.error || "Settlement Failed");
-      return;
+      // 4. SUCCESS MESSAGE
+      setPaymentDone(true);
+      handlePaymentSuccess(`Payment Successful! Amount: S$${amount}`);
+
+      // 5. OPEN SETTLEMENT PAGE
+      setTimeout(() => {
+        window.location.href =
+          `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${posOrderId}`;
+      }, 1000);
+
+    } catch (err) {
+
+      console.log("COMPLETE ORDER ERROR:", err);
+      alert("Server Error: " + err.message);
     }
-
-    // 3. UPDATE TableMaster PAYMENT_STATUS = 1 (paid online)
-    await fetch(`${API}/order/payment-status`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        tableId: tableId,
-        paymentStatus: 1
-      })
-    });
-
-    // 4. SUCCESS MESSAGE
-    setPaymentDone(true);
-    handlePaymentSuccess(`Payment Successful! Amount: S$${amount}`);
-
-    // 5. OPEN SETTLEMENT PAGE
-    setTimeout(() => {
-      window.location.href =
-        `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${posOrderId}`;
-    }, 1000);
-
-  } catch (err) {
-
-    console.log("COMPLETE ORDER ERROR:", err);
-    alert("Server Error: " + err.message);
-  }
-};
+  };
 
   const saveCartToBackend = async () => {
     setIsCartLoading(true);
@@ -571,27 +540,27 @@ const completeOrder = async (posOrderId, amount) => {
           try {
             const cartRes = await fetch(`${API}/order/cart/${tableId}`);
             const cartData = await cartRes.json();
-            
+
             if (cartData && cartData.items) {
               setCart(prev => {
                 let changed = false;
                 const updatedCart = prev.map(item => {
                   if (!item.OrderDetailId && !item.lineItemId) {
-                    const match = cartData.items.find(b => 
+                    const match = cartData.items.find(b =>
                       (b.id || b.DishId || b.dishId) == (item.DishId || item.id)
                     );
                     if (match && (match.OrderDetailId || match.lineItemId)) {
                       changed = true;
-                      return { 
-                        ...item, 
-                        OrderDetailId: match.OrderDetailId || match.lineItemId, 
-                        lineItemId: match.OrderDetailId || match.lineItemId 
+                      return {
+                        ...item,
+                        OrderDetailId: match.OrderDetailId || match.lineItemId,
+                        lineItemId: match.OrderDetailId || match.lineItemId
                       };
                     }
                   }
                   return item;
                 });
-                
+
                 if (changed) {
                   skipSaveRef.current = true;
                   return updatedCart;
@@ -669,7 +638,7 @@ const completeOrder = async (posOrderId, amount) => {
 
       if (data.success) {
         if (data.orderId) { setCurrentOrderId(data.orderId); }
-        
+
         const totalAmount =
           cart.reduce((s, i) => s + (Number(i.Price || i.price || 0) * Number(i.qty || 1)), 0).toFixed(2);
         setShowPaymentPopup(true);
@@ -839,7 +808,7 @@ const completeOrder = async (posOrderId, amount) => {
             .map((m) => m.ModifierID)
             .sort()
             .join("-"),
-          
+
           status: "NEW",
         },
       ];
@@ -983,561 +952,542 @@ const completeOrder = async (posOrderId, amount) => {
       (Number(i.Price || i.price || 0) *
         Number(i.qty || 1)), 0).toFixed(2);
 
- return (
+  return (
 
-  <Routes>
+    <Routes>
 
-    <Route
-      path="/"
-      element={
+      <Route
+        path="/"
+        element={
 
-        // <div className="pos-app">
-    <PullToRefresh onRefresh={handleRefresh} backgroundColor="#f97316" pullingContent={""}>
-    <div className="pos-app">
-      {isCartLoading && (
-        <div className="modal-overlay" style={{ zIndex: 99999, flexDirection: 'column', cursor: 'wait' }}>
-          <div style={{ width: '50px', height: '50px', border: '5px solid rgba(255,255,255,0.3)', borderTop: '5px solid #f97316', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
-          <div style={{ color: '#fff', marginTop: '16px', fontSize: '18px', fontWeight: 'bold' }}>Loading...</div>
-          <style>
-            {`
+          // <div className="pos-app">
+          <PullToRefresh onRefresh={handleRefresh} backgroundColor="#f97316" pullingContent={""}>
+            <div className="pos-app">
+              {isCartLoading && (
+                <div className="modal-overlay" style={{ zIndex: 99999, flexDirection: 'column', cursor: 'wait' }}>
+                  <div style={{ width: '50px', height: '50px', border: '5px solid rgba(255,255,255,0.3)', borderTop: '5px solid #f97316', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+                  <div style={{ color: '#fff', marginTop: '16px', fontSize: '18px', fontWeight: 'bold' }}>Loading...</div>
+                  <style>
+                    {`
               @keyframes spin {
                 0% { transform: rotate(0deg); }
                 100% { transform: rotate(360deg); }
               }
             `}
-          </style>
-        </div>
-      )}
-      {/* Top Header */}
-      <div className="pos-header">
-        {/* <button className="icon-btn" onClick={() => setShowSettingsModal(true)}>
+                  </style>
+                </div>
+              )}
+              {/* Top Header */}
+              <div className="pos-header">
+                {/* <button className="icon-btn" onClick={() => setShowSettingsModal(true)}>
           <SettingsIcon />
         </button> */}
-        <div className="search-wrap">
-          <SearchIcon />
-          <input
-            type="text"
-            placeholder="Search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        {/* <button className="icon-btn cart-btn-header">
+                <div className="search-wrap">
+                  <SearchIcon />
+                  <input
+                    type="text"
+                    placeholder="Search"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+                {/* <button className="icon-btn cart-btn-header">
           <CartIcon />
           {cart.length > 0 && <span className="badge">{cart.length}</span>}
         </button> */}
 
-       <button
-  className="status-btn"
-  onClick={() =>
-    window.location.href =
-      `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${currentOrderId}`
-  }
->
- 🟢 Current Status
-</button>
-      </div>
-
-      {/* Categories Navigation */}
-      <div className="nav-scroll">
-        {categories.map((cat) => (
-          <button
-            key={cat.CategoryId}
-            className={`pill cat-pill ${activeCategory === cat.CategoryId ? "active" : ""
-              }`}
-            onClick={() => {
-              setActiveCategory(cat.CategoryId);
-              loadGroups(cat.CategoryId);
-            }}
-          >
-            {cat.KitchenTypeName}
-          </button>
-        ))}
-      </div>
-
-      {/* Groups Navigation */}
-      <div className="nav-scroll groups-row">
-        {groups.map((grp) => (
-          <button
-            key={grp.DishGroupId}
-            className={`pill grp-pill ${activeGroup === grp.DishGroupId ? "active" : ""
-              }`}
-            onClick={() => {
-              setActiveGroup(grp.DishGroupId);
-              loadDishes(grp.DishGroupId);
-            }}
-          >
-            {grp.DishGroupName}
-          </button>
-        ))}
-      </div>
-
-      {/* Main Content Area */}
-      <div className="pos-content">
-        {/* Left Side: Dish List */}
-        <div className="dish-list">
-          {filteredItems.map((dish) => (
-            <div className="dish-card" key={dish.DishId} onClick={() => openModifiers(dish)}>
-              <div className="dish-img-box">
-                {dish.HasImage ? (
-                  <img
-                    src={`${API}/image/${dish.Image}`}
-                    alt={dish.Name}
-                  />
-                ) : (
-                  <div className="dish-placeholder">
-                    <ForkKnifeIcon />
-                  </div>
-                )}
+                <button
+                  className="status-btn"
+                  onClick={() =>
+                    window.location.href =
+                    `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${currentOrderId}`
+                  }
+                >
+                  🟢 Order Status
+                </button>
               </div>
-              <div className="dish-name">{dish.Name}</div>
-              <div className="dish-price">${dish.Price.toFixed(2)}</div>
-            </div>
-          ))}
-        </div>
 
-        {/* Right Side: Cart Sidebar */}
-        <div className="cart-sidebar">
-          <div className="cart-header">
-            <span className="cart-table-no">
-              Table No:{tableNo || "1"}
-            </span>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <button 
-                onClick={() => tableId && loadCart(tableId)}
-                style={{ background: 'none', border: '1px solid #ddd', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
-                title="Refresh Cart"
-                disabled={isCartLoading}
-              >
-                ↻ Refresh
-              </button>
-              <span className="cart-sync" style={{ color: isCartLoading ? '#f97316' : '#9ca3af' }}>
-                {isCartLoading ? "• Loading..." : "• Synced"}
-              </span>
-            </div>
-          </div>
-
-          {cart.length === 0 ? (
-            <div className="empty-cart-state">
-              <div className="empty-icon-wrap">
-                <BurgerDrinkIcon />
+              {/* Categories Navigation */}
+              <div className="nav-scroll">
+                {(Array.isArray(categories) ? categories : []).map((cat) => (
+                  <button
+                    key={cat.CategoryId}
+                    className={`pill cat-pill ${activeCategory === cat.CategoryId ? "active" : ""
+                      }`}
+                    onClick={() => {
+                      setActiveCategory(cat.CategoryId);
+                      loadGroups(cat.CategoryId);
+                    }}
+                  >
+                    {cat.KitchenTypeName}
+                  </button>
+                ))}
               </div>
-              <h3>Empty Cart</h3>
-              <p>Select delicious dishes from the menu to start this order.</p>
-            </div>
-          ) : (
-            <div className="cart-items-container">
-              <div className="cart-items-list">
-                {cart.map((item, index) => (
-                  <div key={index} className="cart-item">
 
-                    <div className="ci-info">
+              {/* Groups Navigation */}
+              <div className="nav-scroll groups-row">
+                {groups.map((grp) => (
+                  <button
+                    key={grp.DishGroupId}
+                    className={`pill grp-pill ${activeGroup === grp.DishGroupId ? "active" : ""
+                      }`}
+                    onClick={() => {
+                      setActiveGroup(grp.DishGroupId);
+                      loadDishes(grp.DishGroupId);
+                    }}
+                  >
+                    {grp.DishGroupName}
+                  </button>
+                ))}
+              </div>
 
-                      <div className="ci-name">
-                        {item.Name || item.name}
-                        {item.selectedMods?.length > 0 && (
-                          <div className="ci-mods">
-                            {item.selectedMods
-                              .map((m) => m.ModifierName)
-                              .join(", ")}
+              {/* Main Content Area */}
+              <div className="pos-content">
+                {/* Left Side: Dish List */}
+                <div className="dish-list">
+                  {filteredItems.map((dish) => (
+                    <div className="dish-card" key={dish.DishId} onClick={() => openModifiers(dish)}>
+                      <div className="dish-img-box">
+                        {dish.HasImage ? (
+                          <img
+                            src={`${API}/image/${dish.Image}`}
+                            alt={dish.Name}
+                          />
+                        ) : (
+                          <div className="dish-placeholder">
+                            <ForkKnifeIcon />
                           </div>
                         )}
                       </div>
+                      <div className="dish-name">{dish.Name}</div>
+                      <div className="dish-price">${dish.Price.toFixed(2)}</div>
+                    </div>
+                  ))}
+                </div>
 
-                      <div className="qty-controls">
+                {/* Right Side: Cart Sidebar */}
+                <div className="cart-sidebar">
+                  <div className="cart-header">
+                    <span className="cart-table-no">
+                      Table No:{tableNo || "1"}
+                    </span>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <button
+                        onClick={() => tableId && loadCart(tableId)}
+                        style={{ background: 'none', border: '1px solid #ddd', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                        title="Refresh Cart"
+                        disabled={isCartLoading}
+                      >
+                        ↻ Refresh
+                      </button>
+                      <span className="cart-sync" style={{ color: isCartLoading ? '#f97316' : '#9ca3af' }}>
+                        {isCartLoading ? "• Loading..." : "• Synced"}
+                      </span>
+                    </div>
+                  </div>
 
-                        <button
-                          className="qty-btn"
-                          onClick={() => decreaseQty(index)}
-                        // disabled={
-                        //   (item.status && item.status === "SENT") ||
-                        //   isCartLoading
-                        // }
-                          // style={{ opacity: ((item.status && item.status !== "NEW") || isCartLoading) ? 0.5 : 1 }}
-                          style={{
-                            opacity: 1
-                          }}
-                        >
-                          -
-                        </button>
-
-                        <span className="qty-text">
-                          {item.qty || 1}
-                        </span>
-
-                        <button
-                          className="qty-btn"
-                          onClick={() => increaseQty(index)}
-                      //  disabled={
-                      //   (item.status && item.status === "SENT") ||
-                      //   isCartLoading
-                      // }
-                          // style={{ opacity: ((item.status && item.status !== "NEW") || isCartLoading) ? 0.5 : 1 }}
-                          style={{
-                      opacity: 1
-                    }}
-                        >
-                          +
-                        </button>
-
+                  {cart.length === 0 ? (
+                    <div className="empty-cart-state">
+                      <div className="empty-icon-wrap">
+                        <BurgerDrinkIcon />
                       </div>
-
+                      <h3>Empty Cart</h3>
+                      <p>Select delicious dishes from the menu to start this order.</p>
                     </div>
+                  ) : (
+                    <div className="cart-items-container">
+                      <div className="cart-items-list">
+                        {cart.map((item, index) => (
+                          <div key={index} className="cart-item">
 
-                    <div className="ci-price">
-                      $
-                      {(
-                        Number(item.Price || item.price || 0) *
-                        Number(item.qty || 1)
-                      ).toFixed(2)}
+                            <div className="ci-info">
+
+                              <div className="ci-name">
+                                {item.Name || item.name}
+                                {item.selectedMods?.length > 0 && (
+                                  <div className="ci-mods">
+                                    {item.selectedMods
+                                      .map((m) => m.ModifierName)
+                                      .join(", ")}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="qty-controls">
+
+                                <button
+                                  className="qty-btn"
+                                  onClick={() => decreaseQty(index)}
+                                  // disabled={
+                                  //   (item.status && item.status === "SENT") ||
+                                  //   isCartLoading
+                                  // }
+                                  // style={{ opacity: ((item.status && item.status !== "NEW") || isCartLoading) ? 0.5 : 1 }}
+                                  style={{
+                                    opacity: 1
+                                  }}
+                                >
+                                  -
+                                </button>
+
+                                <span className="qty-text">
+                                  {item.qty || 1}
+                                </span>
+
+                                <button
+                                  className="qty-btn"
+                                  onClick={() => increaseQty(index)}
+                                  //  disabled={
+                                  //   (item.status && item.status === "SENT") ||
+                                  //   isCartLoading
+                                  // }
+                                  // style={{ opacity: ((item.status && item.status !== "NEW") || isCartLoading) ? 0.5 : 1 }}
+                                  style={{
+                                    opacity: 1
+                                  }}
+                                >
+                                  +
+                                </button>
+
+                              </div>
+
+                            </div>
+
+                            <div className="ci-price">
+                              $
+                              {(
+                                Number(item.Price || item.price || 0) *
+                                Number(item.qty || 1)
+                              ).toFixed(2)}
+                            </div>
+
+                          </div>
+                        ))}
+                      </div>
+                      <div className="cart-footer">
+                        <div className="cart-total-row">
+                          <span>Total</span>
+                          <span>${cart
+                            .reduce(
+                              (s, i) =>
+                                s +
+                                (
+                                  Number(i.Price || i.price || 0) *
+                                  Number(i.qty || 1)
+                                ),
+                              0
+                            )
+                            .toFixed(2)}</span>
+                        </div>
+                        <button
+                          className="checkout-btn"
+                          onClick={placeOrder}
+                        >
+                          Place Order
+                        </button>
+                      </div>
                     </div>
-
-                  </div>
-                ))}
-              </div>
-              <div className="cart-footer">
-                <div className="cart-total-row">
-                  <span>Total</span>
-                  <span>${cart
-                    .reduce(
-                      (s, i) =>
-                        s +
-                        (
-                          Number(i.Price || i.price || 0) *
-                          Number(i.qty || 1)
-                        ),
-                      0
-                    )
-                    .toFixed(2)}</span>
+                  )}
                 </div>
-                <button
-                  className="checkout-btn"
-                  onClick={placeOrder}
-                >
-                  Place Order
-                </button>
               </div>
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* MODIFIER MODAL */}
-      {showModifier && selectedDish && (
-        <div className="modal-overlay" onClick={() => setShowModifier(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">Modifiers for {selectedDish.Name || selectedDish.name}</h2>
-              <button className="modal-close" onClick={() => setShowModifier(false)}>
-                &times;
-              </button>
-            </div>
+              {/* MODIFIER MODAL */}
+              {showModifier && selectedDish && (
+                <div className="modal-overlay" onClick={() => setShowModifier(false)}>
+                  <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                    <div className="modal-header">
+                      <h2 className="modal-title">Modifiers for {selectedDish.Name || selectedDish.name}</h2>
+                      <button className="modal-close" onClick={() => setShowModifier(false)}>
+                        &times;
+                      </button>
+                    </div>
 
-            <div className="modal-body">
-              <div className="modifier-list">
-                {modifiers.map((m) => (
-                  <div
-                    key={m.ModifierID}
-                    className="modifier-row"
-                    onClick={() => toggleModifier(m)}
-                  >
-                    <span className="modifier-name">
-                      {m.ModifierName} {m.Price > 0 && `(+$${m.Price.toFixed(2)})`}
-                    </span>
-                    <div
-                      className={`checkbox ${selectedModifierIds.includes(m.ModifierID) ? "active" : ""
-                        }`}
+                    <div className="modal-body">
+                      <div className="modifier-list">
+                        {modifiers.map((m) => (
+                          <div
+                            key={m.ModifierID}
+                            className="modifier-row"
+                            onClick={() => toggleModifier(m)}
+                          >
+                            <span className="modifier-name">
+                              {m.ModifierName} {m.Price > 0 && `(+$${m.Price.toFixed(2)})`}
+                            </span>
+                            <div
+                              className={`checkbox ${selectedModifierIds.includes(m.ModifierID) ? "active" : ""
+                                }`}
+                            >
+                              {selectedModifierIds.includes(m.ModifierID) && (
+                                <span className="checkmark">&#10003;</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+
+                        {/* Display added custom mods */}
+                        {customMods.map((m) => (
+                          <div
+                            key={m.ModifierID}
+                            className="modifier-row"
+                            onClick={() => toggleModifier(m)}
+                          >
+                            <span className="modifier-name" style={{ color: '#f97316' }}>
+                              {m.ModifierName} {m.Price > 0 && `(+$${m.Price.toFixed(2)})`} (Custom)
+                            </span>
+                            <div
+                              className={`checkbox ${selectedModifierIds.includes(m.ModifierID) ? "active" : ""
+                                }`}
+                            >
+                              {selectedModifierIds.includes(m.ModifierID) && (
+                                <span className="checkmark">&#10003;</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="modal-footer">
+                      <button className="btn-cancel" onClick={() => setShowModifier(false)}>
+                        Cancel
+                      </button>
+                      <button className="btn-add" onClick={addWithModifiers}>
+                        Done
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* CUSTOM ITEM SUB-MODAL */}
+                  {showCustomModal && (
+                    <div className="modal-overlay sub-modal-overlay">
+                      <div className="custom-item-modal" onClick={(e) => e.stopPropagation()}>
+                        <h3 className="custom-modal-title">Add Custom Item</h3>
+
+                        <div className="input-group">
+                          <label className="input-label">Item Name *</label>
+                          <input
+                            type="text"
+                            className="custom-input"
+                            placeholder="Enter item name"
+                            value={customItemName}
+                            onChange={(e) => setCustomItemName(e.target.value)}
+                            autoFocus
+                          />
+                        </div>
+
+                        <div className="input-group">
+                          <label className="input-label">Price (Optional)</label>
+                          <input
+                            type="number"
+                            className="custom-input"
+                            placeholder="Enter price"
+                            value={customItemPrice}
+                            onChange={(e) => setCustomItemPrice(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="custom-modal-actions">
+                          <button
+                            className="btn-cancel"
+                            onClick={() => setShowCustomModal(false)}
+                          >
+                            Cancel
+                          </button>
+                          <button className="btn-add" onClick={addCustomMod}>
+                            Add Item
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+              )}
+              {showPaymentPopup && (
+                <div className="modal-overlay">
+
+                  <div className="payment-popup">
+
+                    <button
+                      className="payment-close"
+                      onClick={() => setShowPaymentPopup(false)}
                     >
-                      {selectedModifierIds.includes(m.ModifierID) && (
-                        <span className="checkmark">&#10003;</span>
-                      )}
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+
+                    <div className="payment-dot"></div>
+
+                    <div className="payment-icon-outer">
+                      <div className="payment-icon-inner">?</div>
                     </div>
-                  </div>
-                ))}
 
-                {/* Display added custom mods */}
-                {customMods.map((m) => (
-                  <div
-                    key={m.ModifierID}
-                    className="modifier-row"
-                    onClick={() => toggleModifier(m)}
-                  >
-                    <span className="modifier-name" style={{ color: '#f97316' }}>
-                      {m.ModifierName} {m.Price > 0 && `(+$${m.Price.toFixed(2)})`} (Custom)
-                    </span>
-                    <div
-                      className={`checkbox ${selectedModifierIds.includes(m.ModifierID) ? "active" : ""
-                        }`}
-                    >
-                      {selectedModifierIds.includes(m.ModifierID) && (
-                        <span className="checkmark">&#10003;</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+                    <h2 className="payment-title">
+                      How would you like to pay ?
+                    </h2>
 
-            <div className="modal-footer">
-              <button className="btn-cancel" onClick={() => setShowModifier(false)}>
-                Cancel
-              </button>
-              <button className="btn-add" onClick={addWithModifiers}>
-                Done
-              </button>
-            </div>
-          </div>
+                    <p className="payment-subtitle">
+                      These are the available payment methods
+                    </p>
 
-          {/* CUSTOM ITEM SUB-MODAL */}
-          {showCustomModal && (
-            <div className="modal-overlay sub-modal-overlay">
-              <div className="custom-item-modal" onClick={(e) => e.stopPropagation()}>
-                <h3 className="custom-modal-title">Add Custom Item</h3>
+                    <div className="payment-card">
 
-                <div className="input-group">
-                  <label className="input-label">Item Name *</label>
-                  <input
-                    type="text"
-                    className="custom-input"
-                    placeholder="Enter item name"
-                    value={customItemName}
-                    onChange={(e) => setCustomItemName(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-
-                <div className="input-group">
-                  <label className="input-label">Price (Optional)</label>
-                  <input
-                    type="number"
-                    className="custom-input"
-                    placeholder="Enter price"
-                    value={customItemPrice}
-                    onChange={(e) => setCustomItemPrice(e.target.value)}
-                  />
-                </div>
-
-                <div className="custom-modal-actions">
-                  <button
-                    className="btn-cancel"
-                    onClick={() => setShowCustomModal(false)}
-                  >
-                    Cancel
-                  </button>
-                  <button className="btn-add" onClick={addCustomMod}>
-                    Add Item
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-      )}
-      {showPaymentPopup && (
-        <div className="modal-overlay">
-
-          <div className="payment-popup">
-
-            <button
-              className="payment-close"
-              onClick={() => setShowPaymentPopup(false)}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            </button>
-
-            <div className="payment-dot"></div>
-
-            <div className="payment-icon-outer">
-              <div className="payment-icon-inner">?</div>
-            </div>
-
-            <h2 className="payment-title">
-              How would you like to pay ?
-            </h2>
-
-            <p className="payment-subtitle">
-              These are the available payment methods
-            </p>
-
-            <div className="payment-card">
-
-              <div className="card-top-section card-1-top">
-                {/* <div className="qlub-branding">
+                      <div className="card-top-section card-1-top">
+                        {/* <div className="qlub-branding">
                   <span className="pb-text">Powered By</span>
                   <span className="qlub-logo">qlub <span className="qlub-dots">::</span></span>
                 </div> */}
-                <div className="brand-grid">
-                   <VoucherBrand />
-                  <MastercardBrand />
-                  <NetsBrand />
-                  <PayNowBrand />
-                  <VisaBrand />
-                  {/* <GPayBrand />
+                        <div className="brand-grid">
+                          <VoucherBrand />
+                          <MastercardBrand />
+                          <NetsBrand />
+                          <PayNowBrand />
+                          <VisaBrand />
+                          {/* <GPayBrand />
                   <MastercardBrand />
                   <UnionPayBrand />
                   <ApplePayBrand />
                   <VisaBrand />
                   <AmexBrand /> */}
+                        </div>
+                      </div>
+
+                      { /*<button
+                        className="payment-btn"
+                        onClick={() => {
+                          setShowPaymentPopup(false);
+                          alert("Currently Not Available");
+                        }}
+                      >
+                        Pay Online
+                      </button>*/}
+
+                      <button
+                        className="payment-btn"
+                        onClick={() => {
+                          setShowPaymentPopup(false);
+                          // completeOrder() (called on YeahPay success) handles:
+                          // 1. StatusCode = 2 in RestaurantOrderDetailCur
+                          // 2. Insert SettlementHeader
+                          // 3. Insert SettlementItemDetail
+                          handlePayOnline();
+                        }}
+                      >
+                        Pay Online
+                      </button>
+
+                    </div>
+
+                    <div className="payment-or">
+                      OR
+                    </div>
+
+                    <div className="payment-card">
+
+                      <div className="card-top-section card-2-top">
+                        <div className="brand-grid full-grid">
+                          <CashBrand />
+                          <VoucherBrand />
+                          <MastercardBrand />
+                          <NetsBrand />
+                          <PayNowBrand />
+                          <VisaBrand />
+                        </div>
+                      </div>
+
+                      <button
+                        className="payment-btn"
+                        onClick={async () => {
+                          try {
+                            await fetch(`${API}/order/mark-sent`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ orderId: currentOrderId, statusCode: 1 })
+                            });
+
+                            await fetch(`${API}/order/payment-status`, {
+                              method: "POST",
+                              headers: {
+                                "Content-Type": "application/json"
+                              },
+                              body: JSON.stringify({
+                                tableId: tableId,
+                                paymentStatus: 0
+                              })
+                            });
+
+                          } catch (e) {
+
+                            console.error(e);
+
+                          }
+                          setShowPaymentPopup(false);
+
+                          window.location.href =
+                            `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${currentOrderId}`;
+
+                        }}
+                      >
+                        Pay At Cashier Now
+                      </button>
+
+                    </div>
+
+                  </div>
+
                 </div>
-              </div>
+              )}
 
-            <button
-              className="payment-btn"
-              onClick={() => {
-                setShowPaymentPopup(false);
-                alert("Currently Not Available");
-              }}
-            >
-              Pay Online
-            </button>
-
-            {/* <button
-                  className="payment-btn"
-                  onClick={async () => {
-                    setShowPaymentPopup(false);
-                    try {
-                      await fetch(`${API}/order/mark-sent`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ orderId: currentOrderId })
-                      });
-                      
-                      await fetch(`${API}/order/payment-status`, {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({
-                          tableId: tableId,
-                          paymentStatus: 1
-                        })
-                      });
-
-                      skipSaveRef.current = true;
-                      setCart((prev) => prev.map((item) => ({ ...item, status: "SENT" })));
-                    } catch (e) {
-                      console.error("Mark sent/payment status error:", e);
-                    }
-                    handlePayOnline();
-                  }}
-                >
-                  Pay Online
-                </button> */}
-
-            </div>
-
-            <div className="payment-or">
-              OR
-            </div>
-
-            <div className="payment-card">
-
-              <div className="card-top-section card-2-top">
-                <div className="brand-grid full-grid">
-                  <CashBrand />
-                  <VoucherBrand />
-                  <MastercardBrand />
-                  <NetsBrand />
-                  <PayNowBrand />
-                  <VisaBrand />
+              {successMessage && (
+                <div className="modal-overlay" style={{ zIndex: 10000 }}>
+                  <div className="success-modal">
+                    <div className="success-icon">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </div>
+                    <h2 className="success-title">Success!</h2>
+                    <p className="success-text">{successMessage}</p>
+                  </div>
                 </div>
-              </div>
+              )}
 
-            <button
-  className="payment-btn"
-  onClick={async () => {
-     try {
-      await fetch(`${API}/order/mark-sent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId: currentOrderId })
-      });
+              {showOnlinePayment && (
+                <div className="modal-overlay" style={{ zIndex: 10001, padding: 0 }}>
+                  <div className="pos-app" style={{ width: '100vw', height: '100dvh', background: '#fdfbf7', display: 'flex', flexDirection: 'column', borderRadius: 0 }}>
 
-      await fetch(`${API}/order/payment-status`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          tableId: tableId,
-          paymentStatus: 0
-        })
-      });
+                    <div className="pos-header" style={{ borderBottom: '1px solid #eee', background: 'white' }}>
+                      <button className="icon-btn" onClick={() => setShowOnlinePayment(false)}>
+                        <BackIcon />
+                      </button>
+                      <div style={{ flex: 1, textAlign: 'center', fontSize: '18px', fontWeight: 'bold' }}>
+                        Checkout
+                      </div>
+                      <div style={{ width: '48px' }}></div>
+                    </div>
 
-    } catch (e) {
-
-      console.error(e);
-
-    }
-    setShowPaymentPopup(false);
-
-    window.location.href =
-      `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${currentOrderId}`;
-
-  }}
->
-  Pay At Cashier Now
-</button>
-
-            </div>
-
-          </div>
-
-        </div>
-      )}
-
-      {successMessage && (
-        <div className="modal-overlay" style={{ zIndex: 10000 }}>
-          <div className="success-modal">
-            <div className="success-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            </div>
-            <h2 className="success-title">Success!</h2>
-            <p className="success-text">{successMessage}</p>
-          </div>
-        </div>
-      )}
-
-      {showOnlinePayment && (
-        <div className="modal-overlay" style={{ zIndex: 10001, padding: 0 }}>
-          <div className="pos-app" style={{ width: '100vw', height: '100dvh', background: '#fdfbf7', display: 'flex', flexDirection: 'column', borderRadius: 0 }}>
-
-            <div className="pos-header" style={{ borderBottom: '1px solid #eee', background: 'white' }}>
-              <button className="icon-btn" onClick={() => setShowOnlinePayment(false)}>
-                <BackIcon />
-              </button>
-              <div style={{ flex: 1, textAlign: 'center', fontSize: '18px', fontWeight: 'bold' }}>
-                Checkout
-              </div>
-              <div style={{ width: '48px' }}></div>
-            </div>
-
-            <div style={{ flex: 1, display: 'flex', gap: '20px', padding: '20px', overflowY: 'auto', flexWrap: 'wrap', alignContent: 'flex-start' }}>
-              {/* Left Side: Payment Method */}
-              <div style={{ flex: '1 1 300px', background: 'white', borderRadius: '20px', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <h3 style={{ margin: '0', textTransform: 'uppercase', fontSize: '12px', color: '#666', letterSpacing: '0.5px' }}>Select Payment Method</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '10px' }}>
-                  {/* <div style={{ padding: '20px 10px', border: '2px solid #f97316', borderRadius: '12px', textAlign: 'center', background: '#fff5eb', color: '#f97316', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+                    <div style={{ flex: 1, display: 'flex', gap: '20px', padding: '20px', overflowY: 'auto', flexWrap: 'wrap', alignContent: 'flex-start' }}>
+                      {/* Left Side: Payment Method */}
+                      <div style={{ flex: '1 1 300px', background: 'white', borderRadius: '20px', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        <h3 style={{ margin: '0', textTransform: 'uppercase', fontSize: '12px', color: '#666', letterSpacing: '0.5px' }}>Select Payment Method</h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '10px' }}>
+                          {/* <div style={{ padding: '20px 10px', border: '2px solid #f97316', borderRadius: '12px', textAlign: 'center', background: '#fff5eb', color: '#f97316', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
                 <MastercardBrand /> <span style={{ fontSize: '12px' }}>Credit Card</span>
               </div> */}
-                  <div
-                    style={{ padding: '20px 10px', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', color: '#666', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
-                    onClick={() => setShowPayNowModal(true)}
-                  >
-                    <PayNowBrand /> <span style={{ fontSize: '12px' }}>PayNow</span>
-                  </div>
-                  {/* <div
+                          <div
+                            style={{ padding: '20px 10px', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', color: '#666', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+                            onClick={() => setShowPayNowModal(true)}
+                          >
+                            <PayNowBrand /> <span style={{ fontSize: '12px' }}>PayNow</span>
+                          </div>
+                          {/* <div
                     style={{ padding: '20px 10px', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', color: '#666', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
                     onClick={() => setShowUpiModal(true)}
                   >
                     <GPayBrand /> <span style={{ fontSize: '12px' }}>GPay / UPI</span>
                   </div> */}
-                </div>
+                        </div>
 
-                <div style={{ flex: 1 }}></div>
+                        <div style={{ flex: 1 }}></div>
 
-               {/* <button
+                        {/* <button
                   className="checkout-btn"
                   style={{ height: '56px', fontSize: '18px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '20px' }}
                   // onClick={() => {
@@ -1626,160 +1576,160 @@ const completeOrder = async (posOrderId, amount) => {
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                   Complete Settlement
                 </button>*/}
-         <button
-            className="checkout-btn"
-            style={{ height: '56px', fontSize: '18px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '20px' }}
-            onClick={handlePayOnline}
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-            Complete Settlement
-          </button>
-              </div>
-
-              {/* Right Side: Summary */}
-              <div style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div style={{ background: 'white', borderRadius: '20px', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', alignItems: 'center' }}>
-                    <span style={{ color: '#666', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.5px' }}>Amount Due</span>
-                    <span style={{ fontSize: '28px', fontWeight: '900', color: '#f97316' }}>${totalAmount}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px' }}>
-                    <span style={{ color: '#666', fontWeight: '600' }}>Subtotal</span>
-                    <span style={{ fontWeight: 'bold', color: '#1f2937' }}>${totalAmount}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                    <span style={{ color: '#666', fontWeight: '600' }}>GST</span>
-                    <span style={{ fontWeight: 'bold', color: '#1f2937' }}>$0.00</span>
-                  </div>
-                </div>
-
-                <div style={{ flex: 1, background: 'white', borderRadius: '20px', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)', overflowY: 'auto' }}>
-                  <h3 style={{ margin: '0 0 15px 0', textTransform: 'uppercase', fontSize: '11px', color: '#666', letterSpacing: '0.5px' }}>Order Items</h3>
-                  {cart.map((item, idx) => (
-                    <div key={idx} style={{ display: 'flex', padding: '12px 0', borderBottom: '1px solid #f3f4f6' }}>
-                      <div style={{ width: '30px', color: '#f97316', fontWeight: '900', fontSize: '13px' }}>{item.qty}x</div>
-                      <div style={{ flex: 1, fontWeight: '600', color: '#1f2937', fontSize: '13px' }}>
-                        {item.Name || item.name}
-                        {item.selectedMods?.length > 0 && (
-                          <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                            {item.selectedMods.map((m) => m.ModifierName).join(", ")}
-                          </div>
-                        )}
+                        <button
+                          className="checkout-btn"
+                          style={{ height: '56px', fontSize: '18px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '20px' }}
+                          onClick={handlePayOnline}
+                        >
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                          Complete Settlement
+                        </button>
                       </div>
-                      <div style={{ fontWeight: 'bold', color: '#1f2937', fontSize: '13px' }}>
-                        ${(Number(item.Price || item.price || 0) * Number(item.qty || 1)).toFixed(2)}
+
+                      {/* Right Side: Summary */}
+                      <div style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        <div style={{ background: 'white', borderRadius: '20px', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', alignItems: 'center' }}>
+                            <span style={{ color: '#666', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.5px' }}>Amount Due</span>
+                            <span style={{ fontSize: '28px', fontWeight: '900', color: '#f97316' }}>${totalAmount}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px' }}>
+                            <span style={{ color: '#666', fontWeight: '600' }}>Subtotal</span>
+                            <span style={{ fontWeight: 'bold', color: '#1f2937' }}>${totalAmount}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                            <span style={{ color: '#666', fontWeight: '600' }}>GST</span>
+                            <span style={{ fontWeight: 'bold', color: '#1f2937' }}>$0.00</span>
+                          </div>
+                        </div>
+
+                        <div style={{ flex: 1, background: 'white', borderRadius: '20px', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)', overflowY: 'auto' }}>
+                          <h3 style={{ margin: '0 0 15px 0', textTransform: 'uppercase', fontSize: '11px', color: '#666', letterSpacing: '0.5px' }}>Order Items</h3>
+                          {cart.map((item, idx) => (
+                            <div key={idx} style={{ display: 'flex', padding: '12px 0', borderBottom: '1px solid #f3f4f6' }}>
+                              <div style={{ width: '30px', color: '#f97316', fontWeight: '900', fontSize: '13px' }}>{item.qty}x</div>
+                              <div style={{ flex: 1, fontWeight: '600', color: '#1f2937', fontSize: '13px' }}>
+                                {item.Name || item.name}
+                                {item.selectedMods?.length > 0 && (
+                                  <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                                    {item.selectedMods.map((m) => m.ModifierName).join(", ")}
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{ fontWeight: 'bold', color: '#1f2937', fontSize: '13px' }}>
+                                ${(Number(item.Price || item.price || 0) * Number(item.qty || 1)).toFixed(2)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  ))}
+                  </div>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+              )}
 
-      {showPayNowModal && (
-        <div className="modal-overlay" style={{ zIndex: 10002 }}>
-          <div style={{ width: '100%', maxWidth: '320px', backgroundColor: '#fff', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '16px' }}>
-              {/* Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <div>
-                  <div style={{ fontSize: '16px', fontWeight: '800', color: '#1f2937' }}>PayNow QR Payment</div>
-                  {/* <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>AL-HAZIMA RESTAURANT PTE LTD</div> */}
+              {showPayNowModal && (
+                <div className="modal-overlay" style={{ zIndex: 10002 }}>
+                  <div style={{ width: '100%', maxWidth: '320px', backgroundColor: '#fff', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ padding: '16px' }}>
+                      {/* Header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <div>
+                          <div style={{ fontSize: '16px', fontWeight: '800', color: '#1f2937' }}>PayNow QR Payment</div>
+                          {/* <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>AL-HAZIMA RESTAURANT PTE LTD</div> */}
+                        </div>
+                        <button
+                          style={{ border: 'none', background: '#F1F5F9', borderRadius: '10px', padding: '6px', cursor: 'pointer', display: 'flex' }}
+                          onClick={() => setShowPayNowModal(false)}
+                        >
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1f2937" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                      </div>
+
+                      {/* Amount Box */}
+                      <div style={{ backgroundColor: '#F0F9FF', padding: '10px', borderRadius: '12px', alignItems: 'center', marginBottom: '16px', border: '1px solid #BAE6FD', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ fontSize: '11px', color: '#0369A1', fontWeight: '600', marginBottom: '2px' }}>Please Transfer Exactly</div>
+                        <div style={{ fontSize: '22px', fontWeight: '900', color: '#0284C7' }}>${totalAmount}</div>
+                      </div>
+
+                      {/* Dynamic QR */}
+                      <div style={{ alignItems: 'center', marginBottom: '16px', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ width: '150px', height: '150px', backgroundColor: '#fff', borderRadius: '16px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', border: '1px solid #f0f0f0', display: 'flex' }}>
+                          <img
+                            src={
+                              paynowUpiId?.startsWith("data:")
+                                ? paynowUpiId
+                                : paynowUpiId?.startsWith("/9j/")
+                                  ? `data:image/jpeg;base64,${paynowUpiId}`
+                                  : `data:image/png;base64,${paynowUpiId}`
+                            }
+                            alt="PayNow QR"
+                            style={{
+                              width: "130px",
+                              height: "130px",
+                              objectFit: "contain"
+                            }}
+                          />
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '8px', fontWeight: '500', textAlign: 'center' }}>
+                          Scan this QR and pay {totalAmount} exactly
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>
+                          Scan using PayNow / UPI App
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <button
+                        style={{ width: '100%', display: 'flex', backgroundColor: '#22c55e', padding: '12px', borderRadius: '12px', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '10px', border: 'none', cursor: 'pointer' }}
+                        onClick={() => {
+                          setShowPayNowModal(false);
+                          setShowOnlinePayment(false);
+                          completeOrder(currentOrderId, totalAmount);
+                        }}
+                      >
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                        <span style={{ color: '#fff', fontSize: '15px', fontWeight: '800' }}>Payment Received</span>
+                      </button>
+
+                      <button
+                        style={{ width: '100%', padding: '6px', alignItems: 'center', display: 'flex', justifyContent: 'center', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                        onClick={() => setShowPayNowModal(false)}
+                      >
+                        <span style={{ color: '#ef4444', fontSize: '13px', fontWeight: '600' }}>Cancel Transaction</span>
+                      </button>
+
+                    </div>
+                  </div>
                 </div>
-                <button
-                  style={{ border: 'none', background: '#F1F5F9', borderRadius: '10px', padding: '6px', cursor: 'pointer', display: 'flex' }}
-                  onClick={() => setShowPayNowModal(false)}
-                >
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1f2937" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-              </div>
+              )}
 
-              {/* Amount Box */}
-              <div style={{ backgroundColor: '#F0F9FF', padding: '10px', borderRadius: '12px', alignItems: 'center', marginBottom: '16px', border: '1px solid #BAE6FD', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ fontSize: '11px', color: '#0369A1', fontWeight: '600', marginBottom: '2px' }}>Please Transfer Exactly</div>
-                <div style={{ fontSize: '22px', fontWeight: '900', color: '#0284C7' }}>${totalAmount}</div>
-              </div>
+              {showUpiModal && (
+                <div className="modal-overlay" style={{ zIndex: 10002 }}>
+                  <div style={{ width: '100%', maxWidth: '320px', backgroundColor: '#fff', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ padding: '16px' }}>
+                      {/* Header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <div>
+                          <div style={{ fontSize: '16px', fontWeight: '800', color: '#1f2937' }}>UPI QR Payment</div>
+                          <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>AL-HAZIMA RESTAURANT PTE LTD</div>
+                        </div>
+                        <button
+                          style={{ border: 'none', background: '#F1F5F9', borderRadius: '10px', padding: '6px', cursor: 'pointer', display: 'flex' }}
+                          onClick={() => setShowUpiModal(false)}
+                        >
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1f2937" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                      </div>
 
-              {/* Dynamic QR */}
-              <div style={{ alignItems: 'center', marginBottom: '16px', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ width: '150px', height: '150px', backgroundColor: '#fff', borderRadius: '16px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', border: '1px solid #f0f0f0', display: 'flex' }}>
-                  <img
-                    src={
-                      paynowUpiId?.startsWith("data:")
-                        ? paynowUpiId
-                        : paynowUpiId?.startsWith("/9j/")
-                          ? `data:image/jpeg;base64,${paynowUpiId}`
-                          : `data:image/png;base64,${paynowUpiId}`
-                    }
-                    alt="PayNow QR"
-                    style={{
-                      width: "130px",
-                      height: "130px",
-                      objectFit: "contain"
-                    }}
-                  />
-                </div>
-                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '8px', fontWeight: '500', textAlign: 'center' }}>
-                  Scan this QR and pay {totalAmount} exactly
-                </div>
-                <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>
-                  Scan using PayNow / UPI App
-                </div>
-              </div>
+                      {/* Amount Box */}
+                      <div style={{ backgroundColor: '#F8FAFC', padding: '10px', borderRadius: '12px', alignItems: 'center', marginBottom: '16px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', marginBottom: '2px' }}>Total Amount to Collect</div>
+                        <div style={{ fontSize: '22px', fontWeight: '900', color: '#f97316' }}>${totalAmount}</div>
+                      </div>
 
-              {/* Action Buttons */}
-              <button
-                style={{ width: '100%', display: 'flex', backgroundColor: '#22c55e', padding: '12px', borderRadius: '12px', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '10px', border: 'none', cursor: 'pointer' }}
-                onClick={() => {
-                  setShowPayNowModal(false);
-                  setShowOnlinePayment(false);
-                  completeOrder(currentOrderId, totalAmount);
-                }}
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                <span style={{ color: '#fff', fontSize: '15px', fontWeight: '800' }}>Payment Received</span>
-              </button>
-
-              <button
-                style={{ width: '100%', padding: '6px', alignItems: 'center', display: 'flex', justifyContent: 'center', border: 'none', background: 'transparent', cursor: 'pointer' }}
-                onClick={() => setShowPayNowModal(false)}
-              >
-                <span style={{ color: '#ef4444', fontSize: '13px', fontWeight: '600' }}>Cancel Transaction</span>
-              </button>
-
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showUpiModal && (
-        <div className="modal-overlay" style={{ zIndex: 10002 }}>
-          <div style={{ width: '100%', maxWidth: '320px', backgroundColor: '#fff', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '16px' }}>
-              {/* Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <div>
-                  <div style={{ fontSize: '16px', fontWeight: '800', color: '#1f2937' }}>UPI QR Payment</div>
-                  <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>AL-HAZIMA RESTAURANT PTE LTD</div>
-                </div>
-                <button
-                  style={{ border: 'none', background: '#F1F5F9', borderRadius: '10px', padding: '6px', cursor: 'pointer', display: 'flex' }}
-                  onClick={() => setShowUpiModal(false)}
-                >
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1f2937" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-              </div>
-
-              {/* Amount Box */}
-              <div style={{ backgroundColor: '#F8FAFC', padding: '10px', borderRadius: '12px', alignItems: 'center', marginBottom: '16px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', marginBottom: '2px' }}>Total Amount to Collect</div>
-                <div style={{ fontSize: '22px', fontWeight: '900', color: '#f97316' }}>${totalAmount}</div>
-              </div>
-
-              {/* QR Code Container */}
-              {/* <div style={{ alignItems: 'center', marginBottom: '10px', display: 'flex', flexDirection: 'column' }}>
+                      {/* QR Code Container */}
+                      {/* <div style={{ alignItems: 'center', marginBottom: '10px', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ width: '160px', height: '160px', padding: '10px', backgroundColor: '#fff', borderRadius: '16px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                   <QRCodeSVG value={`upi://pay?pa=${upiUpiId || 'merchant@upi'}&pn=Merchant&am=${totalAmount}&cu=INR`} size={140} />
                 </div>
@@ -1789,65 +1739,65 @@ const completeOrder = async (posOrderId, amount) => {
                 {upiUpiId && <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>UPI: {upiUpiId}</div>}
               </div> */}
 
-              {/* Action Buttons */}
-              <button
-                style={{ width: '100%', display: 'flex', backgroundColor: '#22c55e', padding: '12px', borderRadius: '12px', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '10px', border: 'none', cursor: 'pointer' }}
-                onClick={() => {
-                  setShowUpiModal(false);
-                  setShowOnlinePayment(false);
-                  completeOrder(currentOrderId, totalAmount);
-                }}
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                <span style={{ color: '#fff', fontSize: '15px', fontWeight: '800' }}>Payment Received</span>
-              </button>
+                      {/* Action Buttons */}
+                      <button
+                        style={{ width: '100%', display: 'flex', backgroundColor: '#22c55e', padding: '12px', borderRadius: '12px', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '10px', border: 'none', cursor: 'pointer' }}
+                        onClick={() => {
+                          setShowUpiModal(false);
+                          setShowOnlinePayment(false);
+                          completeOrder(currentOrderId, totalAmount);
+                        }}
+                      >
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                        <span style={{ color: '#fff', fontSize: '15px', fontWeight: '800' }}>Payment Received</span>
+                      </button>
 
-              <button
-                style={{ width: '100%', padding: '6px', alignItems: 'center', display: 'flex', justifyContent: 'center', border: 'none', background: 'transparent', cursor: 'pointer' }}
-                onClick={() => setShowUpiModal(false)}
-              >
-                <span style={{ color: '#ef4444', fontSize: '13px', fontWeight: '600' }}>Cancel Transaction</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                      <button
+                        style={{ width: '100%', padding: '6px', alignItems: 'center', display: 'flex', justifyContent: 'center', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                        onClick={() => setShowUpiModal(false)}
+                      >
+                        <span style={{ color: '#ef4444', fontSize: '13px', fontWeight: '600' }}>Cancel Transaction</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
-      {showSettingsModal && (
-        <div className="modal-overlay" style={{ zIndex: 10003 }}>
-          <div className="modal-content" style={{ maxWidth: '420px', display: 'flex', flexDirection: 'column' }}>
-            <div className="modal-header">
-              <h2 className="modal-title">Payment Settings</h2>
-              <button className="modal-close" onClick={() => setShowSettingsModal(false)}>&times;</button>
-            </div>
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {showSettingsModal && (
+                <div className="modal-overlay" style={{ zIndex: 10003 }}>
+                  <div className="modal-content" style={{ maxWidth: '420px', display: 'flex', flexDirection: 'column' }}>
+                    <div className="modal-header">
+                      <h2 className="modal-title">Payment Settings</h2>
+                      <button className="modal-close" onClick={() => setShowSettingsModal(false)}>&times;</button>
+                    </div>
+                    <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-              <div style={{ border: '1px solid #eee', borderRadius: '12px', padding: '16px' }}>
-                <h3 style={{ margin: '0 0 4px 0', fontSize: '14px', color: '#333' }}>PayNow UPI ID</h3>
-                <p style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#6b7280' }}>Enter your PayNow / UPI ID. The QR will be generated dynamically with the correct amount.</p>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
+                      <div style={{ border: '1px solid #eee', borderRadius: '12px', padding: '16px' }}>
+                        <h3 style={{ margin: '0 0 4px 0', fontSize: '14px', color: '#333' }}>PayNow UPI ID</h3>
+                        <p style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#6b7280' }}>Enter your PayNow / UPI ID. The QR will be generated dynamically with the correct amount.</p>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
 
-                    const file = e.target.files[0];
+                            const file = e.target.files[0];
 
-                    const reader = new FileReader();
+                            const reader = new FileReader();
 
-                    reader.onloadend = () => {
+                            reader.onloadend = () => {
 
-                      const base64 = reader.result.split(",")[1];
+                              const base64 = reader.result.split(",")[1];
 
-                      setTempPaynowUpiId(base64);
-                    };
+                              setTempPaynowUpiId(base64);
+                            };
 
-                    if (file) {
-                      reader.readAsDataURL(file);
-                    }
+                            if (file) {
+                              reader.readAsDataURL(file);
+                            }
 
-                  }}
-                />
-                {/* {tempPaynowUpiId && (
+                          }}
+                        />
+                        {/* {tempPaynowUpiId && (
                   <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'center' }}>
                     <QRCodeSVG
   value={
@@ -1860,9 +1810,9 @@ const completeOrder = async (posOrderId, amount) => {
 />
                   </div>
                 )} */}
-              </div>
+                      </div>
 
-              {/* <div style={{ border: '1px solid #eee', borderRadius: '12px', padding: '16px' }}>
+                      {/* <div style={{ border: '1px solid #eee', borderRadius: '12px', padding: '16px' }}>
                 <h3 style={{ margin: '0 0 4px 0', fontSize: '14px', color: '#333' }}>GPay / UPI ID</h3>
                 <p style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#6b7280' }}>Enter your GPay / UPI ID. The QR will include the exact order amount when shown at checkout.</p>
                 <input
@@ -1879,30 +1829,30 @@ const completeOrder = async (posOrderId, amount) => {
                 )}
               </div> */}
 
+                    </div>
+                    <div className="modal-footer" style={{ display: 'flex', gap: '10px' }}>
+                      <button className="btn-cancel" onClick={() => setShowSettingsModal(false)}>Cancel</button>
+                      <button className="btn-add" style={{ flex: 1 }} onClick={() => {
+                        saveUpiId('paynow', tempPaynowUpiId);
+                        saveUpiId('upi', tempUpiUpiId);
+                        setShowSettingsModal(false);
+                      }}>Save Settings</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="modal-footer" style={{ display: 'flex', gap: '10px' }}>
-              <button className="btn-cancel" onClick={() => setShowSettingsModal(false)}>Cancel</button>
-              <button className="btn-add" style={{ flex: 1 }} onClick={() => {
-                saveUpiId('paynow', tempPaynowUpiId);
-                saveUpiId('upi', tempUpiUpiId);
-                setShowSettingsModal(false);
-              }}>Save Settings</button>
-            </div>
-          </div>
-        </div>
-      )}
-          </div>
           </PullToRefresh>
-      }
-    />
+        }
+      />
 
-    <Route
-      path="/settlement-success"
-      element={<SettlementSuccess />}
-    />
+      <Route
+        path="/settlement-success"
+        element={<SettlementSuccess />}
+      />
 
-  </Routes>
-);
+    </Routes>
+  );
 }
 
 export default App;

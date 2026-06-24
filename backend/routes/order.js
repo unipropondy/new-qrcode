@@ -227,7 +227,9 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
     const detailCheck = await transaction.request().input("detailId", sql.UniqueIdentifier, lineItemId).query("SELECT OrderDetailId FROM RestaurantOrderDetailCur WHERE OrderDetailId = @detailId");
     if (
       detailCheck.recordset.length > 0 &&
-      detailCheck.recordset[0].StatusCode !== 4
+      detailCheck.recordset[0].StatusCode !== 4 &&
+      detailCheck.recordset[0].StatusCode !== 3 &&
+      detailCheck.recordset[0].StatusCode !== 2
     ) {
       await transaction.request()
         .input("detailId", sql.UniqueIdentifier, lineItemId)
@@ -252,7 +254,7 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
           String(noteInfo.value || "").substring(0, 100)
         )
         .input("isTakeaway", sql.Bit, takeawayInfo.value ? 1 : 0)
-        .query("UPDATE RestaurantOrderDetailCur SET Quantity = @qty, PricePerUnit = @cost, ActualAmount = @cost * @qty, TotalDetailLineAmount = @cost * @qty, StatusCode = @statusCode, Description = @dishName, DishName = @dishName, ModifiedBy = @userId, ModifiedOn = GETDATE(), ModifiersJSON = @mods, OrderNumber = @orderNo, Remarks = @note, isTakeAway = @isTakeaway WHERE OrderDetailId = @detailId AND StatusCode <> 4");
+        .query("UPDATE RestaurantOrderDetailCur SET Quantity = @qty, PricePerUnit = @cost, ActualAmount = @cost * @qty, TotalDetailLineAmount = @cost * @qty, StatusCode = @statusCode, Description = @dishName, DishName = @dishName, ModifiedBy = @userId, ModifiedOn = GETDATE(), ModifiersJSON = @mods, OrderNumber = @orderNo, Remarks = @note, isTakeAway = @isTakeaway WHERE OrderDetailId = @detailId AND StatusCode <> 4 and StatusCode <> 3 and StatusCode <> 2");
     } else {
       await transaction.request()
         .input("detailId", sql.UniqueIdentifier, lineItemId)
@@ -999,7 +1001,7 @@ router.post("/update-item-status", async (req, res) => {
     await pool.request()
       .input("id", sql.UniqueIdentifier, lineItemId)
       .input("code", sql.Int, statusMap[status] || 2)
-      .query("UPDATE RestaurantOrderDetailCur SET StatusCode = @code, ModifiedOn = GETDATE() WHERE OrderDetailId = @id AND StatusCode <> 4");
+      .query("UPDATE RestaurantOrderDetailCur SET StatusCode = @code, ModifiedOn = GETDATE() WHERE OrderDetailId = @id AND StatusCode <> 4 and StatusCode <> 3 and StatusCode <> 2");
 
     req.app.get("io")?.emit("item_status_updated", { lineItemId, status, tableId, orderId });
     res.json({ success: true });
@@ -1240,18 +1242,22 @@ router.post("/mark-sent", async (req, res) => {
 
   try {
 
-    const { orderId } = req.body;
+    const { orderId, statusCode } = req.body;
+    const finalStatusCode = statusCode !== undefined ? statusCode : 2;
 
     const pool = await poolPromise;
 
     await pool.request()
       .input("orderNo", sql.NVarChar(50), orderId)
+      .input("statusCode", sql.Int, finalStatusCode)
       .query(`
         UPDATE RestaurantOrderDetailCur
-        SET StatusCode = 2
+        SET StatusCode = @statusCode
         WHERE OrderNumber = @orderNo
           AND StatusCode <> 0
           AND StatusCode <> 4
+          and StatusCode <> 3 
+          and StatusCode <> 2
       `);
 
     res.json({
@@ -1268,6 +1274,179 @@ router.post("/mark-sent", async (req, res) => {
   }
 
 });
+
+// Unified complete-online-payment endpoint
+// Performs: StatusCode=2 + SettlementHeader + SettlementItemDetail + table cleanup
+router.post("/complete-online-payment", async (req, res) => {
+  const pool = await poolPromise;
+  const transaction = new sql.Transaction(pool);
+
+  try {
+    const { orderId, tableNo, tableId, totalAmount, cart, paymentMethod } = req.body;
+
+    if (!orderId) {
+      return res.status(400).json({ success: false, error: "orderId is required" });
+    }
+
+    const cleanTableId = tableId ? String(tableId).replace(/^\{|\}$/g, "").trim() : null;
+    const amount = parseFloat(totalAmount) || 0;
+    const pMethod = (paymentMethod || "ONLINE").toUpperCase();
+    const settlementId = crypto.randomUUID();
+
+    await transaction.begin();
+
+    // ── STEP 1: Update RestaurantOrderDetailCur StatusCode = 2 ──────────────
+    await transaction.request()
+      .input("orderNo", sql.NVarChar(50), orderId)
+      .query(`
+        UPDATE RestaurantOrderDetailCur
+        SET StatusCode = 2, ModifiedOn = GETDATE()
+        WHERE OrderNumber = @orderNo
+          AND StatusCode NOT IN (0, 3, 4)
+      `);
+    console.log(`[ONLINE PAY] StatusCode=2 set for order ${orderId}`);
+
+    // ── STEP 2: Fetch order header & items for settlement ───────────────────
+    const orderHeaderRes = await transaction.request()
+      .input("orderNo", sql.NVarChar(50), orderId)
+      .query(`
+        SELECT TOP 1
+          h.OrderId, h.OrderNumber, h.Tableno, h.BusinessUnitId, h.MobileNo,
+          tm.DiningSection
+        FROM RestaurantOrderCur h
+        LEFT JOIN TableMaster tm ON LTRIM(RTRIM(h.Tableno)) = LTRIM(RTRIM(tm.TableNumber))
+        WHERE h.OrderNumber = @orderNo
+      `);
+
+    const header = orderHeaderRes.recordset[0];
+    if (!header) {
+      throw new Error(`Order ${orderId} not found in RestaurantOrderCur`);
+    }
+
+    const guidOrderId = header.OrderId;
+    const businessUnitId = header.BusinessUnitId || DEFAULT_GUID;
+
+    // Fetch line items with category info
+    const itemsRes = await transaction.request()
+      .input("orderId", sql.UniqueIdentifier, guidOrderId)
+      .query(`
+        SELECT
+          d.DishId, d.DishName, d.Quantity, d.PricePerUnit,
+          d.TotalDetailLineAmount, d.StatusCode,
+          dish.DishGroupId,
+          dg.CategoryId,
+          cm.CategoryName,
+          dg.DishGroupName
+        FROM RestaurantOrderDetailCur d
+        LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
+        LEFT JOIN DishGroupMaster dg ON dish.DishGroupId = dg.DishGroupId
+        LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
+        WHERE d.OrderId = @orderId
+          AND d.StatusCode NOT IN (0)
+      `);
+
+    const dbItems = itemsRes.recordset;
+    const subTotal = dbItems.reduce((sum, i) => sum + (i.TotalDetailLineAmount || 0), 0);
+
+    // ── STEP 3: Insert SettlementHeader ─────────────────────────────────────
+    await transaction.request()
+      .input("sid",          sql.UniqueIdentifier, settlementId)
+      .input("oid",          sql.NVarChar(50),     orderId)
+      .input("tableNo",      sql.NVarChar(50),     tableNo || header.Tableno || null)
+      .input("section",      sql.NVarChar(100),    header.DiningSection || null)
+      .input("bizId",        sql.UniqueIdentifier, businessUnitId)
+      .input("subTotal",     sql.Money,            subTotal || amount)
+      .input("sysAmount",    sql.Money,            amount)
+      .input("mobile",       sql.NVarChar(50),     header.MobileNo || null)
+      .input("payMode",      sql.NVarChar(50),     pMethod)
+      .query(`
+        INSERT INTO SettlementHeader (
+          SettlementID, LastSettlementDate, BillNo, OrderType, TableNo, Section,
+          BusinessUnitId, SysAmount, ManualAmount, CreatedOn,
+          SubTotal, TotalTax, DiscountAmount, MobileNo, IsCancelled
+        ) VALUES (
+          @sid, GETDATE(), @oid, 'DINE-IN', @tableNo, @section,
+          @bizId, @sysAmount, @sysAmount, GETDATE(),
+          @subTotal, 0, 0, @mobile, 0
+        )
+      `);
+    console.log(`[ONLINE PAY] SettlementHeader inserted: ${settlementId}`);
+
+    // ── STEP 4: Insert SettlementItemDetail for each line item ───────────────
+    for (const item of dbItems) {
+      await transaction.request()
+        .input("sid",       sql.UniqueIdentifier, settlementId)
+        .input("dishId",    sql.UniqueIdentifier, item.DishId || null)
+        .input("dishName",  sql.NVarChar(255),    item.DishName || "Unknown")
+        .input("qty",       sql.Int,              item.Quantity || 1)
+        .input("price",     sql.Decimal(18, 2),   item.PricePerUnit || 0)
+        .input("catId",     sql.UniqueIdentifier, item.CategoryId || null)
+        .input("catName",   sql.NVarChar(255),    item.CategoryName || "")
+        .input("groupName", sql.NVarChar(255),    item.DishGroupName || "")
+        .query(`
+          INSERT INTO SettlementItemDetail (
+            SettlementID, DishId, DishName, Qty, Price, Status, OrderDateTime,
+            CategoryId, CategoryName, SubCategoryName
+          ) VALUES (
+            @sid, @dishId, @dishName, @qty, @price, 'NORMAL', GETDATE(),
+            @catId, @catName, @groupName
+          )
+        `);
+    }
+
+    // Also insert any cart items not yet in DB (fallback)
+    if (Array.isArray(cart) && cart.length > 0 && dbItems.length === 0) {
+      for (const item of cart) {
+        await transaction.request()
+          .input("sid",      sql.UniqueIdentifier, settlementId)
+          .input("dishName", sql.NVarChar(255),    item.Name || item.name || "Unknown")
+          .input("qty",      sql.Int,              Number(item.qty || 1))
+          .input("price",    sql.Decimal(18, 2),   Number(item.Price || item.price || 0))
+          .query(`
+            INSERT INTO SettlementItemDetail (
+              SettlementID, DishId, DishName, Qty, Price, Status, OrderDateTime
+            ) VALUES (
+              @sid, NULL, @dishName, @qty, @price, 'NORMAL', GETDATE()
+            )
+          `);
+      }
+    }
+    console.log(`[ONLINE PAY] SettlementItemDetail inserted: ${dbItems.length} items`);
+
+    // ── STEP 5: Update TableMaster PAYMENT_STATUS = 1 ───────────────────────
+    if (cleanTableId) {
+      await transaction.request()
+        .input("tid",     sql.UniqueIdentifier, cleanTableId)
+        .input("pStatus", sql.Int,              1)
+        .query(`
+          UPDATE TableMaster
+          SET PAYMENT_STATUS = @pStatus,
+              Status = 1,
+              entry_status = 'q',
+              ModifiedOn = GETDATE()
+          WHERE TableId = @tid
+        `);
+    }
+
+    await transaction.commit();
+    console.log(`[ONLINE PAY] Transaction committed for order ${orderId}`);
+
+    res.json({
+      success: true,
+      transactionId: settlementId,
+      message: "Payment completed successfully"
+    });
+
+  } catch (err) {
+    try { await transaction.rollback(); } catch (_) {}
+    console.error("ONLINE PAYMENT ERROR:", err.message);
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
 module.exports = router;
 
 
