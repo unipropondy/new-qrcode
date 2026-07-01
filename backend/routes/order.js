@@ -1277,174 +1277,335 @@ router.post("/mark-sent", async (req, res) => {
 
 // Unified complete-online-payment endpoint
 // Performs: StatusCode=2 + SettlementHeader + SettlementItemDetail + table cleanup
+// routes/order.js - FIXED complete-online-payment
 router.post("/complete-online-payment", async (req, res) => {
-  const pool = await poolPromise;
-  const transaction = new sql.Transaction(pool);
+    const pool = await poolPromise;
+    const transaction = new sql.Transaction(pool);
 
-  try {
-    const { orderId, tableNo, tableId, totalAmount, cart, paymentMethod } = req.body;
+    try {
+        const { orderId, tableNo, tableId, totalAmount, cart, paymentMethod } = req.body;
 
-    if (!orderId) {
-      return res.status(400).json({ success: false, error: "orderId is required" });
-    }
+        console.log("🔍 [PAYMENT] complete-online-payment called", {
+            orderId,
+            tableNo,
+            tableId,
+            totalAmount,
+            paymentMethod,
+            cartLength: cart?.length || 0
+        });
 
-    const cleanTableId = tableId ? String(tableId).replace(/^\{|\}$/g, "").trim() : null;
-    const amount = parseFloat(totalAmount) || 0;
-    const pMethod = (paymentMethod || "ONLINE").toUpperCase();
-    const settlementId = crypto.randomUUID();
+        if (!orderId) {
+            return res.status(400).json({ success: false, error: "orderId is required" });
+        }
 
-    await transaction.begin();
+        const cleanTableId = tableId ? String(tableId).replace(/^\{|\}$/g, "").trim() : null;
+        const amount = parseFloat(totalAmount) || 0;
+        const pMethod = (paymentMethod || "ONLINE").toUpperCase();
+        const settlementId = crypto.randomUUID();
 
-    // ── STEP 1: Update RestaurantOrderDetailCur StatusCode = 2 ──────────────
-    await transaction.request()
-      .input("orderNo", sql.NVarChar(50), orderId)
-      .query(`
-        UPDATE RestaurantOrderDetailCur
-        SET StatusCode = 2, ModifiedOn = GETDATE()
-        WHERE OrderNumber = @orderNo
-          AND StatusCode NOT IN (0, 3, 4)
-      `);
-    console.log(`[ONLINE PAY] StatusCode=2 set for order ${orderId}`);
+        await transaction.begin();
 
-    // ── STEP 2: Fetch order header & items for settlement ───────────────────
-    const orderHeaderRes = await transaction.request()
-      .input("orderNo", sql.NVarChar(50), orderId)
-      .query(`
-        SELECT TOP 1
-          h.OrderId, h.OrderNumber, h.Tableno, h.BusinessUnitId, h.MobileNo,
-          tm.DiningSection
-        FROM RestaurantOrderCur h
-        LEFT JOIN TableMaster tm ON LTRIM(RTRIM(h.Tableno)) = LTRIM(RTRIM(tm.TableNumber))
-        WHERE h.OrderNumber = @orderNo
-      `);
+        // ── STEP 1: GET OR CREATE ORDER ──────────────────────────────────────────
+        let orderHeaderRes = await transaction.request()
+            .input("orderNo", sql.NVarChar(50), orderId)
+            .query(`
+                SELECT TOP 1
+                    h.OrderId, h.OrderNumber, h.Tableno, h.BusinessUnitId, h.MobileNo,
+                    tm.DiningSection
+                FROM RestaurantOrderCur h
+                LEFT JOIN TableMaster tm ON LTRIM(RTRIM(h.Tableno)) = LTRIM(RTRIM(tm.TableNumber))
+                WHERE h.OrderNumber = @orderNo
+                    OR h.OrderId = (SELECT TOP 1 OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo)
+            `);
 
-    const header = orderHeaderRes.recordset[0];
-    if (!header) {
-      throw new Error(`Order ${orderId} not found in RestaurantOrderCur`);
-    }
+        let header = orderHeaderRes.recordset[0];
+        let guidOrderId;
+        let businessUnitId;
 
-    const guidOrderId = header.OrderId;
-    const businessUnitId = header.BusinessUnitId || DEFAULT_GUID;
+        if (!header) {
+            console.log("⚠️ [PAYMENT] Order not found, creating new...");
+            
+            // Get BusinessUnitId
+            const bizCheck = await transaction.request()
+                .query("SELECT TOP 1 BusinessUnitId FROM RestaurantOrderCur WHERE BusinessUnitId IS NOT NULL AND BusinessUnitId <> '00000000-0000-0000-0000-000000000000'");
+            businessUnitId = bizCheck.recordset[0]?.BusinessUnitId || DEFAULT_GUID;
 
-    // Fetch line items with category info
-    const itemsRes = await transaction.request()
-      .input("orderId", sql.UniqueIdentifier, guidOrderId)
-      .query(`
-        SELECT
-          d.DishId, d.DishName, d.Quantity, d.PricePerUnit,
-          d.TotalDetailLineAmount, d.StatusCode,
-          dish.DishGroupId,
-          dg.CategoryId,
-          cm.CategoryName,
-          dg.DishGroupName
-        FROM RestaurantOrderDetailCur d
-        LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
-        LEFT JOIN DishGroupMaster dg ON dish.DishGroupId = dg.DishGroupId
-        LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
-        WHERE d.OrderId = @orderId
-          AND d.StatusCode NOT IN (0)
-      `);
+            // Get TableNumber
+            let tableNumber = tableNo || "TAKEAWAY";
+            if (cleanTableId) {
+                const tableInfo = await transaction.request()
+                    .input("tid", sql.UniqueIdentifier, cleanTableId)
+                    .query("SELECT TableNumber FROM TableMaster WHERE TableId = @tid");
+                if (tableInfo.recordset.length > 0) {
+                    tableNumber = tableInfo.recordset[0].TableNumber;
+                }
+            }
 
-    const dbItems = itemsRes.recordset;
-    const subTotal = dbItems.reduce((sum, i) => sum + (i.TotalDetailLineAmount || 0), 0);
+            guidOrderId = crypto.randomUUID();
+            await transaction.request()
+                .input("orderId", sql.UniqueIdentifier, guidOrderId)
+                .input("orderNo", sql.NVarChar(50), orderId)
+                .input("tableNo", sql.VarChar(20), tableNumber)
+                .input("bizId", sql.UniqueIdentifier, businessUnitId)
+                .input("userId", sql.UniqueIdentifier, DEFAULT_GUID)
+                .query(`
+                    INSERT INTO RestaurantOrderCur (
+                        OrderId, OrderNumber, OrderDateTime, Tableno, StatusCode, 
+                        CreatedBy, CreatedOn, BusinessUnitId, isOrderClosed, entry_Status
+                    ) VALUES (
+                        @orderId, @orderNo, GETDATE(), @tableNo, 1, 
+                        @userId, GETDATE(), @bizId, 0, 'q'
+                    )
+                `);
+        } else {
+            guidOrderId = header.OrderId;
+            businessUnitId = header.BusinessUnitId || DEFAULT_GUID;
+        }
 
-    // ── STEP 3: Insert SettlementHeader ─────────────────────────────────────
-    await transaction.request()
-      .input("sid",          sql.UniqueIdentifier, settlementId)
-      .input("oid",          sql.NVarChar(50),     orderId)
-      .input("tableNo",      sql.NVarChar(50),     tableNo || header.Tableno || null)
-      .input("section",      sql.NVarChar(100),    header.DiningSection || null)
-      .input("bizId",        sql.UniqueIdentifier, businessUnitId)
-      .input("subTotal",     sql.Money,            subTotal || amount)
-      .input("sysAmount",    sql.Money,            amount)
-      .input("mobile",       sql.NVarChar(50),     header.MobileNo || null)
-      .input("payMode",      sql.NVarChar(50),     pMethod)
-      .query(`
-        INSERT INTO SettlementHeader (
-          SettlementID, LastSettlementDate, BillNo, OrderType, TableNo, Section,
-          BusinessUnitId, SysAmount, ManualAmount, CreatedOn,
-          SubTotal, TotalTax, DiscountAmount, MobileNo, IsCancelled
-        ) VALUES (
-          @sid, GETDATE(), @oid, 'DINE-IN', @tableNo, @section,
-          @bizId, @sysAmount, @sysAmount, GETDATE(),
-          @subTotal, 0, 0, @mobile, 0
-        )
-      `);
-    console.log(`[ONLINE PAY] SettlementHeader inserted: ${settlementId}`);
+        console.log(`🔍 [PAYMENT] Using OrderId: ${guidOrderId}`);
 
-    // ── STEP 4: Insert SettlementItemDetail for each line item ───────────────
-    for (const item of dbItems) {
-      await transaction.request()
-        .input("sid",       sql.UniqueIdentifier, settlementId)
-        .input("dishId",    sql.UniqueIdentifier, item.DishId || null)
-        .input("dishName",  sql.NVarChar(255),    item.DishName || "Unknown")
-        .input("qty",       sql.Int,              item.Quantity || 1)
-        .input("price",     sql.Decimal(18, 2),   item.PricePerUnit || 0)
-        .input("catId",     sql.UniqueIdentifier, item.CategoryId || null)
-        .input("catName",   sql.NVarChar(255),    item.CategoryName || "")
-        .input("groupName", sql.NVarChar(255),    item.DishGroupName || "")
-        .query(`
-          INSERT INTO SettlementItemDetail (
-            SettlementID, DishId, DishName, Qty, Price, Status, OrderDateTime,
-            CategoryId, CategoryName, SubCategoryName
-          ) VALUES (
-            @sid, @dishId, @dishName, @qty, @price, 'NORMAL', GETDATE(),
-            @catId, @catName, @groupName
-          )
-        `);
-    }
-
-    // Also insert any cart items not yet in DB (fallback)
-    if (Array.isArray(cart) && cart.length > 0 && dbItems.length === 0) {
-      for (const item of cart) {
+        // ── STEP 2: UPDATE ORDER STATUS ──────────────────────────────────────────
         await transaction.request()
-          .input("sid",      sql.UniqueIdentifier, settlementId)
-          .input("dishName", sql.NVarChar(255),    item.Name || item.name || "Unknown")
-          .input("qty",      sql.Int,              Number(item.qty || 1))
-          .input("price",    sql.Decimal(18, 2),   Number(item.Price || item.price || 0))
-          .query(`
-            INSERT INTO SettlementItemDetail (
-              SettlementID, DishId, DishName, Qty, Price, Status, OrderDateTime
-            ) VALUES (
-              @sid, NULL, @dishName, @qty, @price, 'NORMAL', GETDATE()
-            )
-          `);
-      }
+            .input("orderNo", sql.NVarChar(50), orderId)
+            .query(`
+                UPDATE RestaurantOrderDetailCur
+                SET StatusCode = 2, ModifiedOn = GETDATE()
+                WHERE OrderNumber = @orderNo
+                  AND StatusCode NOT IN (0, 3, 4)
+            `);
+
+        // ── STEP 3: GET OR CREATE ITEMS ──────────────────────────────────────────
+        let itemsRes = await transaction.request()
+            .input("orderId", sql.UniqueIdentifier, guidOrderId)
+            .query(`
+                SELECT
+                    d.DishId, d.DishName, d.Quantity, d.PricePerUnit,
+                    d.TotalDetailLineAmount, d.StatusCode,
+                    dish.DishGroupId,
+                    dg.CategoryId,
+                    cm.CategoryName,
+                    dg.DishGroupName
+                FROM RestaurantOrderDetailCur d
+                LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
+                LEFT JOIN DishGroupMaster dg ON dish.DishGroupId = dg.DishGroupId
+                LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
+                WHERE d.OrderId = @orderId
+                  AND d.StatusCode NOT IN (0)
+            `);
+
+        let dbItems = itemsRes.recordset;
+
+        // If no items found, create from cart
+        if (dbItems.length === 0 && cart && cart.length > 0) {
+            console.log(`⚠️ [PAYMENT] No items found, creating ${cart.length} items from cart`);
+            
+            for (const item of cart) {
+                const itemId = crypto.randomUUID();
+                const dishId = item.id || item.DishId || DEFAULT_GUID;
+                const dishName = item.name || item.Name || "Unknown";
+                const qty = item.qty || 1;
+                const price = item.price || item.Price || 0;
+                
+                await transaction.request()
+                    .input("detailId", sql.UniqueIdentifier, itemId)
+                    .input("orderId", sql.UniqueIdentifier, guidOrderId)
+                    .input("dishId", sql.UniqueIdentifier, dishId)
+                    .input("dishName", sql.NVarChar(255), dishName)
+                    .input("qty", sql.Int, qty)
+                    .input("price", sql.Decimal(18, 2), price)
+                    .input("bizId", sql.UniqueIdentifier, businessUnitId)
+                    .input("orderNo", sql.NVarChar(50), orderId)
+                    .input("userId", sql.UniqueIdentifier, DEFAULT_GUID)
+                    .query(`
+                        INSERT INTO RestaurantOrderDetailCur (
+                            OrderDetailId, OrderId, DishId, DishName, Quantity, PricePerUnit,
+                            ActualAmount, TotalDetailLineAmount, StatusCode, CreatedOn,
+                            BusinessUnitId, OrderNumber, CreatedBy, Description
+                        ) VALUES (
+                            @detailId, @orderId, @dishId, @dishName, @qty, @price,
+                            @price * @qty, @price * @qty, 2, GETDATE(),
+                            @bizId, @orderNo, @userId, @dishName
+                        )
+                    `);
+            }
+
+            // Re-fetch items
+            itemsRes = await transaction.request()
+                .input("orderId", sql.UniqueIdentifier, guidOrderId)
+                .query(`
+                    SELECT
+                        d.DishId, d.DishName, d.Quantity, d.PricePerUnit,
+                        d.TotalDetailLineAmount, d.StatusCode,
+                        dish.DishGroupId,
+                        dg.CategoryId,
+                        cm.CategoryName,
+                        dg.DishGroupName
+                    FROM RestaurantOrderDetailCur d
+                    LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
+                    LEFT JOIN DishGroupMaster dg ON dish.DishGroupId = dg.DishGroupId
+                    LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
+                    WHERE d.OrderId = @orderId
+                      AND d.StatusCode NOT IN (0)
+                `);
+            dbItems = itemsRes.recordset;
+        }
+
+        const subTotal = dbItems.reduce((sum, i) => sum + (i.TotalDetailLineAmount || 0), 0);
+        console.log(`🔍 [PAYMENT] Found ${dbItems.length} items, SubTotal: ${subTotal}`);
+
+        // ── STEP 4: INSERT SETTLEMENT HEADER ─────────────────────────────────────
+        const tableNoValue = tableNo || header?.Tableno || null;
+        const sectionValue = header?.DiningSection || null;
+        
+        await transaction.request()
+            .input("sid", sql.UniqueIdentifier, settlementId)
+            .input("oid", sql.NVarChar(50), orderId)
+            .input("tableNo", sql.NVarChar(50), tableNoValue)
+            .input("section", sql.NVarChar(100), sectionValue)
+            .input("bizId", sql.UniqueIdentifier, businessUnitId)
+            .input("subTotal", sql.Money, subTotal || amount)
+            .input("sysAmount", sql.Money, amount)
+            .input("mobile", sql.NVarChar(50), header?.MobileNo || null)
+            .input("payMode", sql.NVarChar(50), pMethod)
+            .input("userId", sql.UniqueIdentifier, DEFAULT_GUID)
+            .query(`
+                INSERT INTO SettlementHeader (
+                    SettlementID, LastSettlementDate, BillNo, OrderType, TableNo, Section,
+                    BusinessUnitId, SysAmount, ManualAmount, CreatedOn,
+                    SubTotal, TotalTax, DiscountAmount, MobileNo, IsCancelled,
+                    CreatedBy
+                ) VALUES (
+                    @sid, GETDATE(), @oid, 'DINE-IN', @tableNo, @section,
+                    @bizId, @sysAmount, @sysAmount, GETDATE(),
+                    @subTotal, 0, 0, @mobile, 0,
+                    @userId
+                )
+            `);
+        console.log(`✅ [PAYMENT] SettlementHeader inserted: ${settlementId}`);
+
+        // ── STEP 5: INSERT SETTLEMENT ITEM DETAILS ──────────────────────────────
+        for (const item of dbItems) {
+            await transaction.request()
+                .input("sid", sql.UniqueIdentifier, settlementId)
+                .input("dishId", sql.UniqueIdentifier, item.DishId || null)
+                .input("dishName", sql.NVarChar(255), item.DishName || "Unknown")
+                .input("qty", sql.Int, item.Quantity || 1)
+                .input("price", sql.Decimal(18, 2), item.PricePerUnit || 0)
+                .input("catId", sql.UniqueIdentifier, item.CategoryId || null)
+                .input("catName", sql.NVarChar(255), item.CategoryName || "")
+                .input("groupName", sql.NVarChar(255), item.DishGroupName || "")
+                .input("totalAmount", sql.Decimal(18, 2), (item.Quantity || 1) * (item.PricePerUnit || 0))
+                .query(`
+                    INSERT INTO SettlementItemDetail (
+                        SettlementID, DishId, DishName, Qty, Price, Status, OrderDateTime,
+                        CategoryId, CategoryName, SubCategoryName, TotalAmount
+                    ) VALUES (
+                        @sid, @dishId, @dishName, @qty, @price, 'NORMAL', GETDATE(),
+                        @catId, @catName, @groupName, @totalAmount
+                    )
+                `);
+        }
+        console.log(`✅ [PAYMENT] ${dbItems.length} SettlementItemDetail(s) inserted`);
+
+        // ── STEP 6: INSERT PAYMENT DETAIL ────────────────────────────────────────
+        const paymodeRes = await transaction.request()
+            .input("payMode", sql.NVarChar(50), pMethod)
+            .query(`SELECT TOP 1 Position FROM Paymode WHERE UPPER(LTRIM(RTRIM(PayMode))) = UPPER(LTRIM(RTRIM(@payMode)))`);
+        const paymodePosition = paymodeRes.recordset[0]?.Position || 3;
+
+        await transaction.request()
+            .input("paymentId", sql.UniqueIdentifier, settlementId)
+            .input("restaurantBillId", sql.UniqueIdentifier, settlementId)
+            .input("orderId", sql.UniqueIdentifier, guidOrderId)
+            .input("paymode", sql.Int, paymodePosition)
+            .input("amount", sql.Decimal(18, 2), amount)
+            .input("bizId", sql.UniqueIdentifier, businessUnitId)
+            .input("userId", sql.UniqueIdentifier, DEFAULT_GUID)
+            .query(`
+                INSERT INTO PaymentDetailCur (
+                    PaymentId, RestaurantBillId, OrderId, BilledFor, 
+                    PaymentCollectedOn, PaymentType, Paymode, Amount,
+                    BusinessUnitId, CreatedBy, CreatedOn, ModifiedBy, ModifiedOn
+                ) VALUES (
+                    @paymentId, @restaurantBillId, @orderId, 1,
+                    GETDATE(), 1, @paymode, @amount,
+                    @bizId, @userId, GETDATE(), @userId, GETDATE()
+                )
+            `);
+        console.log(`✅ [PAYMENT] PaymentDetailCur inserted`);
+
+        // ── STEP 7: UPDATE TABLEC MASTER ─────────────────────────────────────────
+        if (cleanTableId) {
+            await transaction.request()
+                .input("tid", sql.UniqueIdentifier, cleanTableId)
+                .input("pStatus", sql.Int, 1)
+                .query(`
+                    UPDATE TableMaster
+                    SET PAYMENT_STATUS = @pStatus,
+                        Status = 2,
+                        entry_status = 'q',
+                        ModifiedOn = GETDATE()
+                    WHERE TableId = @tid
+                `);
+            console.log(`✅ [PAYMENT] TableMaster updated`);
+        }
+
+        // ── STEP 8: ARCHIVE ORDER ────────────────────────────────────────────────
+        await transaction.request()
+            .input("orderNo", sql.NVarChar(50), orderId)
+            .input("totalAmt", sql.Decimal(18, 2), amount)
+            .query(`
+                -- Update RestaurantOrderCur TotalAmount
+                UPDATE RestaurantOrderCur SET TotalAmount = @totalAmt, ModifiedOn = GETDATE() 
+                WHERE OrderNumber = @orderNo;
+
+                -- Archive to RestaurantOrder (if not exists)
+                IF NOT EXISTS (SELECT 1 FROM RestaurantOrder WHERE OrderNumber = @orderNo)
+                BEGIN
+                    INSERT INTO RestaurantOrder (
+                        OrderId, OrderNumber, OrderDateTime, Tableno, StatusCode, 
+                        CreatedBy, CreatedOn, BusinessUnitId, isOrderClosed, TotalAmount
+                    )
+                    SELECT 
+                        OrderId, OrderNumber, OrderDateTime, Tableno, 3, 
+                        CreatedBy, CreatedOn, BusinessUnitId, 1, TotalAmount
+                    FROM RestaurantOrderCur WHERE OrderNumber = @orderNo;
+                END
+
+                -- Archive details
+                INSERT INTO RestaurantOrderDetail (
+                    OrderDetailId, OrderId, DishId, Description, DishName, Quantity, 
+                    PricePerUnit, ActualAmount, TotalDetailLineAmount, StatusCode, 
+                    CreatedBy, CreatedOn, BusinessUnitId, OrderDateTime
+                )
+                SELECT 
+                    OrderDetailId, OrderId, DishId, Description, DishName, Quantity, 
+                    PricePerUnit, ActualAmount, TotalDetailLineAmount, 3, 
+                    CreatedBy, CreatedOn, BusinessUnitId, OrderDateTime
+                FROM RestaurantOrderDetailCur 
+                WHERE OrderId = (SELECT OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo);
+            `);
+        console.log(`✅ [PAYMENT] Order archived`);
+
+        await transaction.commit();
+        console.log(`✅ [PAYMENT] ✅✅✅ ALL COMPLETE for order ${orderId}`);
+
+        res.json({
+            success: true,
+            transactionId: settlementId,
+            orderId: orderId,
+            message: "Payment completed successfully"
+        });
+
+    } catch (err) {
+        try { await transaction.rollback(); } catch (_) {}
+        console.error("❌ [PAYMENT] ERROR:", err.message);
+        console.error("❌ [PAYMENT] Stack:", err.stack);
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
     }
-    console.log(`[ONLINE PAY] SettlementItemDetail inserted: ${dbItems.length} items`);
-
-    // ── STEP 5: Update TableMaster PAYMENT_STATUS = 1 ───────────────────────
-    if (cleanTableId) {
-      await transaction.request()
-        .input("tid",     sql.UniqueIdentifier, cleanTableId)
-        .input("pStatus", sql.Int,              1)
-        .query(`
-          UPDATE TableMaster
-          SET PAYMENT_STATUS = @pStatus,
-              Status = 1,
-              entry_status = 'q',
-              ModifiedOn = GETDATE()
-          WHERE TableId = @tid
-        `);
-    }
-
-    await transaction.commit();
-    console.log(`[ONLINE PAY] Transaction committed for order ${orderId}`);
-
-    res.json({
-      success: true,
-      transactionId: settlementId,
-      message: "Payment completed successfully"
-    });
-
-  } catch (err) {
-    try { await transaction.rollback(); } catch (_) {}
-    console.error("ONLINE PAYMENT ERROR:", err.message);
-    res.status(500).json({
-      success: false,
-      error: err.message
-    });
-  }
 });
 
 module.exports = router;
