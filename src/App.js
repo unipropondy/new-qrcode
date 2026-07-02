@@ -22,6 +22,8 @@ function App() {
   const [cart, setCart] = useState([]);
   const [isCartLoading, setIsCartLoading] = useState(false);
   const [paymentDone, setPaymentDone] = useState(false);
+  const [showCartPage, setShowCartPage] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   // Navigation states
   const [categories, setCategories] = useState([]);
@@ -982,213 +984,246 @@ function App() {
                 {/* <button className="icon-btn" onClick={() => setShowSettingsModal(true)}>
           <SettingsIcon />
         </button> */}
-                <div className="search-wrap">
-                  <SearchIcon />
-                  <input
-                    type="text"
-                    placeholder="Search"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
-                {/* <button className="icon-btn cart-btn-header">
-          <CartIcon />
-          {cart.length > 0 && <span className="badge">{cart.length}</span>}
-        </button> */}
+                {!isSearchOpen ? (
+                  <button className="icon-btn" onClick={() => setIsSearchOpen(true)} style={{ border: 'none', background: 'transparent' }}>
+                    <SearchIcon />
+                  </button>
+                ) : (
+                  <div className="search-wrap" style={{ display: 'flex', alignItems: 'center' }}>
+                    <SearchIcon />
+                    <input
+                      type="text"
+                      placeholder="Search"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      autoFocus
+                      onBlur={() => {
+                        if (!search) setIsSearchOpen(false);
+                      }}
+                      style={{ outline: 'none', border: 'none', marginLeft: '5px' }}
+                    />
+                    <button onClick={() => { setIsSearchOpen(false); setSearch(""); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888' }}>✖</button>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <button
+                    className={`status-btn ${cart.length > 0 ? 'blink-anim' : ''}`}
+                    onClick={() => setShowCartPage(!showCartPage)}
+                    style={{ background: '#fe7a38', color: 'white', transition: 'transform 0.1s ease-out', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: '6px'}}>
+                      <circle cx="9" cy="21" r="1"></circle>
+                      <circle cx="20" cy="21" r="1"></circle>
+                      <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+                    </svg>
+                    Cart → {cart.length > 0 && `(${cart.length})`}
+                  </button>
 
-                <button
-                  className="status-btn"
-                  onClick={() =>
-                    window.location.href =
-                    `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${currentOrderId}`
-                  }
-                >
-                  🟢 Order Status
-                </button>
+                  <button
+                    className="status-btn"
+                    onClick={() =>
+                      window.location.href =
+                      `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${currentOrderId}`
+                    }
+                  >
+                    🟢 Order Status
+                  </button>
+                </div>
               </div>
 
               {/* Categories Navigation */}
-              <div className="nav-scroll">
-                {(Array.isArray(categories) ? categories : []).map((cat) => (
-                  <button
-                    key={cat.CategoryId}
-                    className={`pill cat-pill ${activeCategory === cat.CategoryId ? "active" : ""
-                      }`}
-                    onClick={() => {
-                      setActiveCategory(cat.CategoryId);
-                      loadGroups(cat.CategoryId);
-                    }}
-                  >
-                    {cat.KitchenTypeName}
-                  </button>
-                ))}
-              </div>
+              {!showCartPage && (
+                <>
+                  <div className="nav-scroll">
+                    {(Array.isArray(categories) ? categories : []).map((cat) => (
+                      <button
+                        key={cat.CategoryId}
+                        className={`pill cat-pill ${activeCategory === cat.CategoryId ? "active" : ""
+                          }`}
+                        onClick={() => {
+                          setActiveCategory(cat.CategoryId);
+                          loadGroups(cat.CategoryId);
+                        }}
+                      >
+                        {cat.KitchenTypeName}
+                      </button>
+                    ))}
+                  </div>
 
-              {/* Groups Navigation */}
-              <div className="nav-scroll groups-row">
-                {groups.map((grp) => (
-                  <button
-                    key={grp.DishGroupId}
-                    className={`pill grp-pill ${activeGroup === grp.DishGroupId ? "active" : ""
-                      }`}
-                    onClick={() => {
-                      setActiveGroup(grp.DishGroupId);
-                      loadDishes(grp.DishGroupId);
-                    }}
-                  >
-                    {grp.DishGroupName}
-                  </button>
-                ))}
-              </div>
+                  {/* Groups Navigation */}
+                  <div className="nav-scroll groups-row">
+                    {groups.map((grp) => (
+                      <button
+                        key={grp.DishGroupId}
+                        className={`pill grp-pill ${activeGroup === grp.DishGroupId ? "active" : ""
+                          }`}
+                        onClick={() => {
+                          setActiveGroup(grp.DishGroupId);
+                          loadDishes(grp.DishGroupId);
+                        }}
+                      >
+                        {grp.DishGroupName}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
 
               {/* Main Content Area */}
               <div className="pos-content">
                 {/* Left Side: Dish List */}
-                <div className="dish-list">
-                  {filteredItems.map((dish) => (
-                    <div className="dish-card" key={dish.DishId} onClick={() => openModifiers(dish)}>
-                      <div className="dish-img-box">
-                        {dish.HasImage ? (
-                          <img
-                            src={`${API}/image/${dish.Image}`}
-                            alt={dish.Name}
-                          />
-                        ) : (
-                          <div className="dish-placeholder">
-                            <ForkKnifeIcon />
-                          </div>
-                        )}
+                {!showCartPage && (
+                  <div className="dish-list">
+                    {filteredItems.map((dish) => (
+                      <div className="dish-card" key={dish.DishId} onClick={() => openModifiers(dish)}>
+                        <div className="dish-img-box">
+                          {dish.HasImage ? (
+                            <img
+                              src={`${API}/image/${dish.Image}`}
+                              alt={dish.Name}
+                            />
+                          ) : (
+                            <div className="dish-placeholder">
+                              <ForkKnifeIcon />
+                            </div>
+                          )}
+                        </div>
+                        <div className="dish-name">{dish.Name}</div>
+                        <div className="dish-price">${dish.Price.toFixed(2)}</div>
                       </div>
-                      <div className="dish-name">{dish.Name}</div>
-                      <div className="dish-price">${dish.Price.toFixed(2)}</div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Right Side: Cart Sidebar */}
-                <div className="cart-sidebar">
-                  <div className="cart-header">
-                    <span className="cart-table-no">
-                      Table No:{tableNo || "1"}
-                    </span>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                      <button
-                        onClick={() => tableId && loadCart(tableId)}
-                        style={{ background: 'none', border: '1px solid #ddd', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
-                        title="Refresh Cart"
-                        disabled={isCartLoading}
-                      >
-                        ↻ Refresh
+                {showCartPage && (
+                  <div className="cart-sidebar">
+                    <div className="cart-header">
+                      <button onClick={() => setShowCartPage(false)} style={{ background: 'none', border: '1px solid #ddd', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', color: '#fe7a38', fontWeight: 'bold' }}>
+                        Go to Home Page
                       </button>
-                      <span className="cart-sync" style={{ color: isCartLoading ? '#f97316' : '#9ca3af' }}>
-                        {isCartLoading ? "• Loading..." : "• Synced"}
+                      <span className="cart-table-no">
+                        Table No:{tableNo || "1"}
                       </span>
-                    </div>
-                  </div>
-
-                  {cart.length === 0 ? (
-                    <div className="empty-cart-state">
-                      <div className="empty-icon-wrap">
-                        <BurgerDrinkIcon />
-                      </div>
-                      <h3>Empty Cart</h3>
-                      <p>Select delicious dishes from the menu to start this order.</p>
-                    </div>
-                  ) : (
-                    <div className="cart-items-container">
-                      <div className="cart-items-list">
-                        {cart.map((item, index) => (
-                          <div key={index} className="cart-item">
-
-                            <div className="ci-info">
-
-                              <div className="ci-name">
-                                {item.Name || item.name}
-                                {item.selectedMods?.length > 0 && (
-                                  <div className="ci-mods">
-                                    {item.selectedMods
-                                      .map((m) => m.ModifierName)
-                                      .join(", ")}
-                                  </div>
-                                )}
-                              </div>
-
-                              <div className="qty-controls">
-
-                                <button
-                                  className="qty-btn"
-                                  onClick={() => decreaseQty(index)}
-                                  // disabled={
-                                  //   (item.status && item.status === "SENT") ||
-                                  //   isCartLoading
-                                  // }
-                                  // style={{ opacity: ((item.status && item.status !== "NEW") || isCartLoading) ? 0.5 : 1 }}
-                                  style={{
-                                    opacity: 1
-                                  }}
-                                >
-                                  -
-                                </button>
-
-                                <span className="qty-text">
-                                  {item.qty || 1}
-                                </span>
-
-                                <button
-                                  className="qty-btn"
-                                  onClick={() => increaseQty(index)}
-                                  //  disabled={
-                                  //   (item.status && item.status === "SENT") ||
-                                  //   isCartLoading
-                                  // }
-                                  // style={{ opacity: ((item.status && item.status !== "NEW") || isCartLoading) ? 0.5 : 1 }}
-                                  style={{
-                                    opacity: 1
-                                  }}
-                                >
-                                  +
-                                </button>
-
-                              </div>
-
-                            </div>
-
-                            <div className="ci-price">
-                              $
-                              {(
-                                Number(item.Price || item.price || 0) *
-                                Number(item.qty || 1)
-                              ).toFixed(2)}
-                            </div>
-
-                          </div>
-                        ))}
-                      </div>
-                      <div className="cart-footer">
-                        <div className="cart-total-row">
-                          <span>Total</span>
-                          <span>${cart
-                            .reduce(
-                              (s, i) =>
-                                s +
-                                (
-                                  Number(i.Price || i.price || 0) *
-                                  Number(i.qty || 1)
-                                ),
-                              0
-                            )
-                            .toFixed(2)}</span>
-                        </div>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                         <button
-                          className="checkout-btn"
-                          onClick={placeOrder}
+                          onClick={() => tableId && loadCart(tableId)}
+                          style={{ background: 'none', border: '1px solid #ddd', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          title="Refresh Cart"
+                          disabled={isCartLoading}
                         >
-                          Place Order
+                          ↻ Refresh
                         </button>
+                        <span className="cart-sync" style={{ color: isCartLoading ? '#f97316' : '#9ca3af' }}>
+                          {isCartLoading ? "• Loading..." : "• Synced"}
+                        </span>
                       </div>
                     </div>
-                  )}
-                </div>
+
+                    {cart.length === 0 ? (
+                      <div className="empty-cart-state">
+                        <div className="empty-icon-wrap">
+                          <BurgerDrinkIcon />
+                        </div>
+                        <h3>Empty Cart</h3>
+                        <p>Select delicious dishes from the menu to start this order.</p>
+                      </div>
+                    ) : (
+                      <div className="cart-items-container">
+                        <div className="cart-items-list">
+                          {cart.map((item, index) => (
+                            <div key={index} className="cart-item">
+
+                              <div className="ci-info">
+
+                                <div className="ci-name">
+                                  {item.Name || item.name}
+                                  {item.selectedMods?.length > 0 && (
+                                    <div className="ci-mods">
+                                      {item.selectedMods
+                                        .map((m) => m.ModifierName)
+                                        .join(", ")}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="qty-controls">
+
+                                  <button
+                                    className="qty-btn"
+                                    onClick={() => decreaseQty(index)}
+                                    // disabled={
+                                    //   (item.status && item.status === "SENT") ||
+                                    //   isCartLoading
+                                    // }
+                                    // style={{ opacity: ((item.status && item.status !== "NEW") || isCartLoading) ? 0.5 : 1 }}
+                                    style={{
+                                      opacity: 1
+                                    }}
+                                  >
+                                    -
+                                  </button>
+
+                                  <span className="qty-text">
+                                    {item.qty || 1}
+                                  </span>
+
+                                  <button
+                                    className="qty-btn"
+                                    onClick={() => increaseQty(index)}
+                                    //  disabled={
+                                    //   (item.status && item.status === "SENT") ||
+                                    //   isCartLoading
+                                    // }
+                                    // style={{ opacity: ((item.status && item.status !== "NEW") || isCartLoading) ? 0.5 : 1 }}
+                                    style={{
+                                      opacity: 1
+                                    }}
+                                  >
+                                    +
+                                  </button>
+
+                                </div>
+
+                              </div>
+
+                              <div className="ci-price">
+                                $
+                                {(
+                                  Number(item.Price || item.price || 0) *
+                                  Number(item.qty || 1)
+                                ).toFixed(2)}
+                              </div>
+
+                            </div>
+                          ))}
+                        </div>
+                        <div className="cart-footer">
+                          <div className="cart-total-row">
+                            <span>Total</span>
+                            <span>${cart
+                              .reduce(
+                                (s, i) =>
+                                  s +
+                                  (
+                                    Number(i.Price || i.price || 0) *
+                                    Number(i.qty || 1)
+                                  ),
+                                0
+                              )
+                              .toFixed(2)}</span>
+                          </div>
+                          <button
+                            className="checkout-btn"
+                            onClick={placeOrder}
+                          >
+                            Place Order
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* MODIFIER MODAL */}

@@ -152,13 +152,24 @@ body {
   padding-bottom: 6px;
 }
 
-/* Left Side: Dish List */
+@keyframes blink-effect {
+  0% { transform: scale(1); box-shadow: 0 0 0 rgba(255,255,255,0); }
+  50% { transform: scale(1.05); box-shadow: 0 0 8px rgba(245,127,31,0.6); }
+  100% { transform: scale(1); box-shadow: 0 0 0 rgba(255,255,255,0); }
+}
+
+.blink-anim {
+  animation: blink-effect 1.5s infinite;
+}
+
 .dish-list {
-  width: 120px;
+  flex: 1;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  align-content: start;
   gap: 12px;
+  padding: 10px;
   scrollbar-width: none;
 }
 
