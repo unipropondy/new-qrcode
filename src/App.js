@@ -10,6 +10,7 @@ import {
 import PullToRefresh from 'react-simple-pull-to-refresh';
 
 import SettlementSuccess from "./SettlementSuccess";
+import UniversalPrinter from "./components/UniversalPrinter";
 
 function App() {
 
@@ -44,6 +45,7 @@ function App() {
   const [showPayNowModal, setShowPayNowModal] = useState(false);
   const [showUpiModal, setShowUpiModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  const [enableKotQr, setEnableKotQr] = useState(0);
 
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [paynowUpiId, setPaynowUpiId] = useState('');
@@ -98,6 +100,9 @@ function App() {
         );
         setGstPercent(
           Number(data.GSTPercentage || 0)
+        );
+        setEnableKotQr(
+          Number(data.Enablekotqr || 0)
         );
       } catch (err) {
         console.log(err);
@@ -527,6 +532,17 @@ function App() {
       // 4. SUCCESS MESSAGE
       setPaymentDone(true);
       handlePaymentSuccess(`Payment Successful! Amount: S$${amount}`);
+
+      // 5. KOT PRINT — always fires on successful online payment
+      try {
+        await UniversalPrinter.printKOT(
+          { items: cart, tableNo: tableNo, orderId: posOrderId },
+          null,
+          "NEW"
+        );
+      } catch (printErr) {
+        console.warn("[KOT print] failed:", printErr);
+      }
 
       // 5. OPEN SETTLEMENT PAGE
       setTimeout(() => {
@@ -1629,10 +1645,17 @@ function App() {
                               })
                             });
 
+                            if (enableKotQr === 1) {
+                              const orderData = {
+                                items: cart,
+                                tableNo: tableNo,
+                                orderId: currentOrderId
+                              };
+                              await UniversalPrinter.printKOT(orderData, null, "NEW");
+                            }
+
                           } catch (e) {
-
                             console.error(e);
-
                           }
                           setShowPaymentPopup(false);
 
@@ -1762,6 +1785,17 @@ function App() {
                     handlePaymentSuccess(
                       `Payment Successful! TXN: ${data.transactionId}`
                     );
+
+                    // KOT PRINT — always fires on successful online payment
+                    try {
+                      await UniversalPrinter.printKOT(
+                        { items: cart, tableNo: tableNo, orderId: currentOrderId },
+                        null,
+                        "NEW"
+                      );
+                    } catch (printErr) {
+                      console.warn("[KOT print] failed:", printErr);
+                    }
 
                     // ✅ Open SettlementSuccess Screen
                     setTimeout(() => {

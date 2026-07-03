@@ -1237,44 +1237,6 @@ router.post("/payment-status", async (req, res) => {
 
 });
 
-//online payment process
-// router.post("/mark-sent", async (req, res) => {
-
-//   try {
-
-//     const { orderId, statusCode } = req.body;
-//     const finalStatusCode = statusCode !== undefined ? statusCode : 2;
-
-//     const pool = await poolPromise;
-
-//     await pool.request()
-//       .input("orderNo", sql.NVarChar(50), orderId)
-//       .input("statusCode", sql.Int, finalStatusCode)
-//       .query(`
-//         UPDATE RestaurantOrderDetailCur
-//         SET StatusCode = @statusCode
-//         WHERE OrderNumber = @orderNo
-//           AND StatusCode <> 0
-//           AND StatusCode <> 4
-//           and StatusCode <> 3 
-//           and StatusCode <> 2
-//       `);
-
-//     res.json({
-//       success: true
-//     });
-
-//   } catch (err) {
-
-//     res.status(500).json({
-//       success: false,
-//       error: err.message
-//     });
-
-//   }
-
-// });
-
 router.post("/mark-sent", async (req, res) => {
   try {
     const { orderId } = req.body;

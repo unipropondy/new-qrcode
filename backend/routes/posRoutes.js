@@ -211,9 +211,32 @@ router.get("/company/settings", async (req, res) => {
       FROM CompanySettings
     `);
 
-    res.json(result.recordset[0] || {
-      ServiceChargePercentage: 0
-    });
+    // Safely fetch Enablekotqr — only if the column exists in AppSettings
+    let enableKotQr = 0;
+    try {
+      const colCheck = await pool.request().query(`
+        SELECT COUNT(*) AS cnt
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = 'AppSettings' AND COLUMN_NAME = 'Enablekotqr'
+      `);
+      if (colCheck.recordset[0]?.cnt > 0) {
+        const appSettings = await pool.request().query(`
+          SELECT TOP 1 Enablekotqr FROM AppSettings
+        `);
+        enableKotQr = Number(appSettings.recordset[0]?.Enablekotqr || 0);
+      }
+    } catch (e) {
+      console.warn("[company/settings] Enablekotqr check failed:", e.message);
+    }
+
+    const data = result.recordset[0] || {
+      ServiceChargePercentage: 0,
+      GSTPercentage: 0
+    };
+
+    data.Enablekotqr = enableKotQr;
+
+    res.json(data);
 
   } catch (err) {
     console.error("COMPANY SETTINGS ERROR:", err);
