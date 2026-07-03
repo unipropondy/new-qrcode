@@ -20,6 +20,8 @@ function App() {
   const API = `${BASE_URL}/api`;
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState([]);
+  const [serviceChargePercent, setServiceChargePercent] = useState(0);
+  const [gstPercent, setGstPercent] = useState(0);
   const [isCartLoading, setIsCartLoading] = useState(false);
   const [paymentDone, setPaymentDone] = useState(false);
   const [showCartPage, setShowCartPage] = useState(false);
@@ -85,6 +87,24 @@ function App() {
       }
     };
     fetchQRs();
+
+    const loadCompanySettings = async () => {
+      try {
+        const res = await fetch(`${API}/company/settings`);
+        const data = await res.json();
+
+        setServiceChargePercent(
+          Number(data.ServiceChargePercentage || 0)
+        );
+        setGstPercent(
+          Number(data.GSTPercentage || 0)
+        );
+      } catch (err) {
+        console.log(err);
+      }
+    };
+
+    loadCompanySettings();
 
     loadKitchens();
 
@@ -154,7 +174,7 @@ function App() {
     try {
       const res = await fetch(`${API}/dishes/group/${groupId}`);
       const data = await res.json();
-
+      console.log(JSON.stringify(data, null, 2));
       setDishes(data);
     } catch (err) {
       console.log(err);
@@ -344,14 +364,60 @@ function App() {
   // Online payment flow using YeahPay demo
 
   const handlePayOnline = async () => {
-    // Calculate total amount inside the function
-    const totalAmount = cart.reduce((s, i) =>
-      s + (Number(i.Price || i.price || 0) * Number(i.qty || 1)), 0
+    // Calculate total amount inside the function/
+
+    //OLD PROCESS---------------------------
+    // const totalAmount = cart.reduce((s, i) =>
+    //   s + (Number(i.Price || i.price || 0) * Number(i.qty || 1)), 0
+    // ).toFixed(2);
+
+    // console.log("Opening payment for amount:", totalAmount);
+    // console.log("POS Order ID:", currentOrderId);
+
+    //NEW PROCESS---------------------------
+
+    const eligibleAmount = cart.reduce(
+      (sum, item) =>
+        item.IsServiceCharge
+          ? sum +
+          Number(item.Price || item.price || 0) *
+          Number(item.qty || 1)
+          : sum,
+      0
+    );
+
+    // Service Charge
+    const serviceCharge =
+      eligibleAmount * (serviceChargePercent / 100);
+
+    // Cart Subtotal
+    const subTotal = cart.reduce(
+      (sum, item) =>
+        sum +
+        Number(item.Price || item.price || 0) *
+        Number(item.qty || 1),
+      0
+    );
+
+    // GST Calculation
+    const beforeGST = subTotal + serviceCharge;
+
+    const gstAmount =
+      beforeGST * (gstPercent / 100);
+
+    // Final Total
+    const totalAmount = (
+      subTotal + serviceCharge
     ).toFixed(2);
 
+    console.log("Subtotal:", subTotal);
+    console.log("Eligible:", eligibleAmount);
+    console.log("Service Charge:", serviceCharge);
+    console.log("Grand Total:", totalAmount);
+
+    // 👇 Continue with your existing payment logic
     console.log("Opening payment for amount:", totalAmount);
     console.log("POS Order ID:", currentOrderId);
-
     // Pass the real POS orderId as posOrderId so we can use it on success
     // (YeahPay generates its own orderId which does NOT match our DB OrderNumber)
     const demoUrl = `https://yeahpay-demo-production.up.railway.app?amount=${totalAmount}&orderId=${currentOrderId}&posOrderId=${encodeURIComponent(currentOrderId)}&from=pos`;
@@ -769,6 +835,8 @@ function App() {
             .sort()
         );
 
+
+
         return (
           item.DishId === selectedDish.DishId &&
           (item.modifierKey || "") ===
@@ -942,6 +1010,20 @@ function App() {
     </div>
   );
 
+  // const handleRefresh = async () => {
+  //   await loadKitchens();
+  //   if (tableId) {
+  //     await loadCart(tableId);
+  //   }
+  // };
+
+  // const totalAmount
+  //   = cart.reduce((s, i) => s +
+  //     (Number(i.Price || i.price || 0) *
+  //       Number(i.qty || 1)), 0).toFixed(2);
+
+  // return (
+
   const handleRefresh = async () => {
     await loadKitchens();
     if (tableId) {
@@ -949,10 +1031,37 @@ function App() {
     }
   };
 
-  const totalAmount
-    = cart.reduce((s, i) => s +
-      (Number(i.Price || i.price || 0) *
-        Number(i.qty || 1)), 0).toFixed(2);
+  // Service Charge Calculation
+  const eligibleAmount = cart.reduce(
+    (sum, item) =>
+      item.IsServiceCharge
+        ? sum +
+        Number(item.Price || item.price || 0) *
+        Number(item.qty || 1)
+        : sum,
+    0
+  );
+
+  const serviceCharge =
+    eligibleAmount * (serviceChargePercent / 100);
+
+  const subTotal = cart.reduce(
+    (sum, item) =>
+      sum +
+      Number(item.Price || item.price || 0) *
+      Number(item.qty || 1),
+    0
+  );
+
+  // GST Calculation
+  const beforeGST = subTotal + serviceCharge;
+
+  const gstAmount =
+    beforeGST * (gstPercent / 100);
+
+  const totalAmount = (
+    subTotal + serviceCharge
+  ).toFixed(2);
 
   return (
 
@@ -1011,7 +1120,7 @@ function App() {
                     onClick={() => setShowCartPage(!showCartPage)}
                     style={{ background: '#fe7a38', color: 'white', transition: 'transform 0.1s ease-out', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: '6px'}}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px' }}>
                       <circle cx="9" cy="21" r="1"></circle>
                       <circle cx="20" cy="21" r="1"></circle>
                       <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
@@ -1075,7 +1184,15 @@ function App() {
                 {!showCartPage && (
                   <div className="dish-list">
                     {filteredItems.map((dish) => (
-                      <div className="dish-card" key={dish.DishId} onClick={() => openModifiers(dish)}>
+                      <div className="dish-card" key={dish.DishId} onClick={() => openModifiers(dish)}
+                        style={{
+                          backgroundColor: dish.IsServiceCharge ? "#FFF3F3" : "#fff",
+
+                          border: dish.IsServiceCharge
+                            ? "2px solid #FFA8A8"
+                            : "1px solid #E5E7EB",
+                        }}
+                      >
                         <div className="dish-img-box">
                           {dish.HasImage ? (
                             <img
@@ -1088,8 +1205,24 @@ function App() {
                             </div>
                           )}
                         </div>
-                        <div className="dish-name">{dish.Name}</div>
-                        <div className="dish-price">${dish.Price.toFixed(2)}</div>
+                        <div
+                          className="dish-name"
+                          style={{
+                            color: dish.IsServiceCharge
+                              ? "#D32F2F"
+                              : "#111827",
+                          }}
+                        >
+                          {dish.Name}
+                        </div>
+                        <div
+                          className="dish-price"
+                          style={{
+                            color: dish.IsServiceCharge ? "#D32F2F" : "#F97316",
+                          }}
+                        >
+                          ${dish.Price.toFixed(2)}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1132,7 +1265,19 @@ function App() {
                       <div className="cart-items-container">
                         <div className="cart-items-list">
                           {cart.map((item, index) => (
-                            <div key={index} className="cart-item">
+                            <div
+                              key={index}
+                              className="cart-item"
+                              style={{
+                                background: item.IsServiceCharge ? "#FFF3F3" : "#fff",
+                                border: item.IsServiceCharge
+                                  ? "2px solid #FFA8A8"
+                                  : "1px solid #E5E7EB",
+                                borderRadius: "16px",
+                                marginBottom: "12px",
+                                padding: "12px",
+                              }}
+                            >
 
                               <div className="ci-info">
 
@@ -1198,7 +1343,7 @@ function App() {
                             </div>
                           ))}
                         </div>
-                        <div className="cart-footer">
+                        {/* <div className="cart-footer">
                           <div className="cart-total-row">
                             <span>Total</span>
                             <span>${cart
@@ -1219,6 +1364,40 @@ function App() {
                           >
                             Place Order
                           </button>
+                        </div> */}
+                        <div className="cart-footer">
+
+                          <div className="cart-total-row">
+                            <span>Subtotal</span>
+                            <span>${subTotal.toFixed(2)}</span>
+                          </div>
+
+                          {serviceCharge > 0 && (
+                            <div className="cart-total-row">
+                              <span>Service Charge ({serviceChargePercent}%)</span>
+                              <span>${serviceCharge.toFixed(2)}</span>
+                            </div>
+                          )}
+
+                          {gstAmount > 0 && (
+                            <div className="cart-total-row">
+                              <span>GST ({gstPercent}%)</span>
+                              <span>${gstAmount.toFixed(2)}</span>
+                            </div>
+                          )}
+
+                          <div className="cart-total-row">
+                            <strong>Total</strong>
+                            <strong>${totalAmount}</strong>
+                          </div>
+
+                          <button
+                            className="checkout-btn"
+                            onClick={placeOrder}
+                          >
+                            Place Order
+                          </button>
+
                         </div>
                       </div>
                     )}
@@ -1436,7 +1615,7 @@ function App() {
                             await fetch(`${API}/order/mark-sent`, {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ orderId: currentOrderId, statusCode: 1 })
+                              body: JSON.stringify({ orderId: currentOrderId/*, statusCode: 1 */ })
                             });
 
                             await fetch(`${API}/order/payment-status`, {

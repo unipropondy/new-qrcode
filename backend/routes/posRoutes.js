@@ -10,7 +10,7 @@ router.get("/kitchens", async (req, res) => {
       SELECT cm.CategoryId, cm.CategoryName AS KitchenTypeName, ckt.KitchenTypeCode
       FROM CategoryMaster cm
       LEFT JOIN CategoryKitchenType ckt ON cm.CategoryId = ckt.CategoryId
-      WHERE cm.IsActive = 1
+      WHERE cm.IsActive = 1 ORDER BY cm.SortCode ASC
     `);
     res.json(result.recordset);
   } catch (err) {
@@ -28,7 +28,7 @@ router.get("/dishgroups/:CategoryId", async (req, res) => {
         SELECT a.DishGroupId, a.DishGroupName
         FROM DishGroupMaster a
         JOIN CategoryMaster b ON a.CategoryId = b.CategoryId
-        WHERE a.CategoryId = @CategoryId AND a.IsActive = 1
+        WHERE a.CategoryId = @CategoryId AND a.IsActive = 1 ORDER BY a.SortCode ASC
       `);
     res.json(result.recordset);
   } catch (err) {
@@ -43,14 +43,14 @@ router.get("/dishes/all", async (req, res) => {
     const result = await pool.request().query(`
       SELECT 
         d.DishId, d.Name, d.DishGroupId, d.currentcost AS Price,
-        d.DishCode, d.Description,
+        d.DishCode, d.Description,d.IsServiceCharge,
         d.Imageid AS Image, CASE WHEN d.Imageid IS NOT NULL THEN 1 ELSE 0 END AS HasImage,
         ckt.KitchenTypeCode, ckt.KitchenTypeName, pm.PrinterPath AS PrinterIP
       FROM DishMaster d
       LEFT JOIN DishGroupMaster dgm ON d.DishGroupId = dgm.DishGroupId
       LEFT JOIN CategoryKitchenType ckt ON dgm.CategoryId = ckt.CategoryId
       LEFT JOIN PrintMaster pm ON CAST(ckt.KitchenTypeCode AS INT) = pm.KitchenTypeValue
-      WHERE d.IsActive = 1 ORDER BY d.Name ASC
+      WHERE d.IsActive = 1 ORDER BY d.SordCode ASC
     `);
     res.json(result.recordset);
   } catch (err) {
@@ -69,7 +69,7 @@ router.get("/dishes/group/:DishGroupId", async (req, res) => {
             d.Name,  
             d.DishGroupId, 
             currentcost AS Price,
-            d.Imageid AS Image,
+            d.Imageid AS Image,d.IsServiceCharge,
             CASE WHEN d.Imageid IS NOT NULL THEN 1 ELSE 0 END AS HasImage,
             CASE
                     WHEN EXISTS (
@@ -86,7 +86,7 @@ router.get("/dishes/group/:DishGroupId", async (req, res) => {
         LEFT JOIN CategoryKitchenType ckt ON dgm.CategoryId = ckt.CategoryId
         LEFT JOIN PrintMaster pm ON CAST(ckt.KitchenTypeCode AS INT) = pm.KitchenTypeValue
         WHERE d.IsActive = 1 
-        AND d.DishGroupId = @DishGroupId ORDER BY d.Name ASC
+        AND d.DishGroupId = @DishGroupId ORDER BY d.SordCode ASC
       `);
     res.json(result.recordset);
   } catch (err) {
@@ -200,6 +200,27 @@ router.post("/order/add", async (req, res) => {
   }
 });
 
+/* ================= COMPANY SETTINGS ================= */
+
+router.get("/company/settings", async (req, res) => {
+  try {
+    const pool = await poolPromise;
+
+    const result = await pool.request().query(`
+      SELECT TOP 1 ServiceChargePercentage,GSTPercentage
+      FROM CompanySettings
+    `);
+
+    res.json(result.recordset[0] || {
+      ServiceChargePercentage: 0
+    });
+
+  } catch (err) {
+    console.error("COMPANY SETTINGS ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ================= PAYMODES ================= */
 router.get("/paymodes/qrs", async (req, res) => {
   try {
@@ -211,21 +232,21 @@ router.get("/paymodes/qrs", async (req, res) => {
 
     const qrs = {};
 
-result.recordset.forEach(row => {
+    result.recordset.forEach(row => {
 
-if (row.PayMode.trim() === 'PAYNOW') {
-  qrs.paynow = row.PaymodeImage
-    ? row.PaymodeImage.toString("base64")
-    : "";
-}
+      if (row.PayMode.trim() === 'PAYNOW') {
+        qrs.paynow = row.PaymodeImage
+          ? row.PaymodeImage.toString("base64")
+          : "";
+      }
 
-if (row.PayMode.trim() === 'UPI') {
-  qrs.upi = row.PaymodeImage
-    ? row.PaymodeImage.toString("base64")
-    : "";
-}
+      if (row.PayMode.trim() === 'UPI') {
+        qrs.upi = row.PaymodeImage
+          ? row.PaymodeImage.toString("base64")
+          : "";
+      }
 
-});
+    });
 
     res.json(qrs);
   } catch (err) {
