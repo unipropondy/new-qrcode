@@ -1018,6 +1018,7 @@ router.get("/active-kitchen", async (req, res) => {
         d.Remarks as note, d.ModifiersJSON, d.isTakeAway, DATEDIFF(SECOND, d.CreatedOn, GETDATE()) as elapsedSeconds,
         ISNULL(ckt.KitchenTypeCode, '0') as KitchenTypeCode, 
         ISNULL(ISNULL(ckt.KitchenTypeName, cat.CategoryName), 'General') as KitchenTypeName,
+        pm.PrinterName,
         pm.PrinterPath as PrinterIP,
         tm.TableId, tm.DiningSection
       FROM RestaurantOrderDetailCur d 
@@ -1269,6 +1270,16 @@ router.post("/mark-sent", async (req, res) => {
       `);
 
     console.log("Rows Updated:", result.rowsAffected);
+
+    if (enableKotQr === 1 && req.io) {
+      req.io.emit("qr-print-request", {
+        orderId: orderId,
+        source: "QR",
+        paymentType: "cashier",
+        printKOT: true,
+        printBill: false
+      });
+    }
 
     res.json({
       success: true
@@ -1613,6 +1624,16 @@ router.post("/complete-online-payment", async (req, res) => {
 
     await transaction.commit();
     console.log(`✅ [PAYMENT] ✅✅✅ ALL COMPLETE for order ${orderId}`);
+
+    if (req.io) {
+      req.io.emit("qr-print-request", {
+        orderId: orderId,
+        source: "QR",
+        paymentType: "online",
+        printKOT: true,
+        printBill: true
+      });
+    }
 
     res.json({
       success: true,

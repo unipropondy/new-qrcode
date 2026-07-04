@@ -3,6 +3,22 @@ const cors = require("cors");
 require("dotenv").config();
 
 const app = express();
+const http = require("http");
+const { Server } = require("socket.io");
+
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
+// Pass io object to req so routers can emit events
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
 
 app.use(cors());
 app.use(express.json());
@@ -24,6 +40,13 @@ app.get("/", (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+io.on("connection", (socket) => {
+  console.log("🔌 New Socket.IO Client Connected:", socket.id);
+  socket.on("disconnect", () => {
+    console.log("🔌 Socket.IO Client Disconnected:", socket.id);
+  });
+});
+
+server.listen(PORT, () => {
   console.log(`🚀 Server running on ${PORT}`);
 });

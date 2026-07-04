@@ -288,6 +288,7 @@ function generateKOTHTML(data, type) {
     const kitchenGroups = {};
     items.forEach((item) => {
       const kName = (
+        item.PrinterName ||
         item.KitchenTypeName ||
         item.kitchenTypeName ||
         item.dishGroupName ||
@@ -433,6 +434,7 @@ function formatKOTThermalText(data, type) {
     const kitchenGroups = {};
     items.forEach((item) => {
       const kName = (
+        item.PrinterName ||
         item.KitchenTypeName ||
         item.kitchenTypeName ||
         item.dishGroupName ||

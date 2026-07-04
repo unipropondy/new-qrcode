@@ -45,7 +45,7 @@ router.get("/dishes/all", async (req, res) => {
         d.DishId, d.Name, d.DishGroupId, d.currentcost AS Price,
         d.DishCode, d.Description,d.IsServiceCharge,
         d.Imageid AS Image, CASE WHEN d.Imageid IS NOT NULL THEN 1 ELSE 0 END AS HasImage,
-        ckt.KitchenTypeCode, ckt.KitchenTypeName, pm.PrinterPath AS PrinterIP
+        ckt.KitchenTypeCode, ckt.KitchenTypeName, pm.PrinterPath AS PrinterIP, pm.PrinterName
       FROM DishMaster d
       LEFT JOIN DishGroupMaster dgm ON d.DishGroupId = dgm.DishGroupId
       LEFT JOIN CategoryKitchenType ckt ON dgm.CategoryId = ckt.CategoryId
@@ -80,7 +80,7 @@ router.get("/dishes/group/:DishGroupId", async (req, res) => {
                     THEN 1
                     ELSE 0
                     END AS HasModifier,
-            ckt.KitchenTypeCode, ckt.KitchenTypeName, pm.PrinterPath AS PrinterIP
+            ckt.KitchenTypeCode, ckt.KitchenTypeName, pm.PrinterPath AS PrinterIP, pm.PrinterName
         FROM DishMaster d
         LEFT JOIN DishGroupMaster dgm ON d.DishGroupId = dgm.DishGroupId
         LEFT JOIN CategoryKitchenType ckt ON dgm.CategoryId = ckt.CategoryId

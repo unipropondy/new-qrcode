@@ -533,7 +533,7 @@ function App() {
       setPaymentDone(true);
       handlePaymentSuccess(`Payment Successful! Amount: S$${amount}`);
 
-      // 5. KOT PRINT — always fires on successful online payment
+      // KOT PRINT — always fires on successful online payment
       try {
         await UniversalPrinter.printKOT(
           { items: cart, tableNo: tableNo, orderId: posOrderId },
@@ -1796,6 +1796,7 @@ function App() {
                     } catch (printErr) {
                       console.warn("[KOT print] failed:", printErr);
                     }
+
 
                     // ✅ Open SettlementSuccess Screen
                     setTimeout(() => {
