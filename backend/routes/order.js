@@ -1275,13 +1275,13 @@ router.post("/mark-sent", async (req, res) => {
 
     console.log("Rows Updated:", result.rowsAffected);
 
-      if (enableKotQr === 1) {
-        try {
-          await generateAndQueueKOTs(orderId);
-        } catch (err) {
-          console.error("Failed to queue KOT for mark-sent:", err);
-        }
+    if (enableKotQr === 1) {
+      try {
+        await generateAndQueueKOTs(orderId);
+      } catch (err) {
+        console.error("Failed to queue KOT for mark-sent:", err);
       }
+    }
 
     if (enableKotQr === 1 && req.io) {
       req.io.emit("qr-print-request", {
@@ -1402,7 +1402,7 @@ router.post("/complete-online-payment", async (req, res) => {
                 UPDATE RestaurantOrderDetailCur
                 SET StatusCode = 2, ModifiedOn = GETDATE()
                 WHERE OrderNumber = @orderNo
-                  AND StatusCode NOT IN (0, 3, 4)
+                  AND StatusCode NOT IN (0,3,4)
             `);
 
     // ── STEP 3: GET OR CREATE ITEMS ──────────────────────────────────────────
@@ -1540,7 +1540,7 @@ router.post("/complete-online-payment", async (req, res) => {
 
     // ── STEP 6: INSERT PAYMENT DETAIL ────────────────────────────────────────
     const paymodeRes = await transaction.request()
-      .input("payMode", sql.NVarChar(50), 'Yeahpay Paynow')
+      .input("payMode", sql.NVarChar(50), 'Online')
       .query(`SELECT TOP 1 Position FROM Paymode WHERE UPPER(LTRIM(RTRIM(PayMode))) = UPPER(LTRIM(RTRIM(@payMode)))`);
     const paymodePosition = paymodeRes.recordset[0]?.Position || 3;
 
@@ -1561,7 +1561,7 @@ router.post("/complete-online-payment", async (req, res) => {
                     @paymentId, @restaurantBillId, @orderId, 1,
                     GETDATE(), 1, @paymode, @amount,
                     @bizId, @userId, GETDATE(), @userId, GETDATE()
-                )
+                ) 
             `);
     console.log(`✅ [PAYMENT] PaymentDetailCur inserted`);
 
@@ -1569,10 +1569,10 @@ router.post("/complete-online-payment", async (req, res) => {
     if (cleanTableId) {
       await transaction.request()
         .input("tid", sql.UniqueIdentifier, cleanTableId)
-        .input("pStatus", sql.Int, 1)
+        // .input("pStatus", sql.Int, 1)
         .query(`
                     UPDATE TableMaster
-                    SET PAYMENT_STATUS = @pStatus,
+                    SET PAYMENT_STATUS =1,
                         Status = 2,
                         entry_status = 'q',
                         ModifiedOn = GETDATE()
