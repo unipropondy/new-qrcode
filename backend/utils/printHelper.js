@@ -343,17 +343,18 @@ async function generateAndQueueReceipt(orderId, paymentMode = 'ONLINE') {
     const pool = await poolPromise;
 
     // 1. Get Order Header + Totals
-    const orderRes = await pool.request()
-      .input("orderNo", sql.NVarChar(50), orderId)
-      .query(`
-        SELECT TOP 1 h.OrderId, h.OrderNumber, LTRIM(RTRIM(h.Tableno)) as tableNo, 
-                     h.TotalAmount, h.ServiceChargeAmount, h.GstAmount, h.DiscountAmount, h.DiscountType, h.DiscountValue
-        FROM RestaurantOrderCur h
-        WHERE h.OrderNumber = @orderNo
-      `);
+    const orderHeaderRes = await pool.request()
+        .input("orderNo", sql.NVarChar(50), orderId)
+        .query(`
+            SELECT TOP 1 h.OrderId, h.OrderNumber, LTRIM(RTRIM(h.Tableno)) as tableNo, 
+                   h.TotalAmount, h.ServiceCharge as ServiceChargeAmount, h.TotalTax as GstAmount, 
+                   h.DiscountAmount, h.DiscountPercentage as DiscountValue
+            FROM RestaurantOrderCur h
+            WHERE h.OrderNumber = @orderNo
+        `);
       
-    if (orderRes.recordset.length === 0) return;
-    const orderHeader = orderRes.recordset[0];
+    if (orderHeaderRes.recordset.length === 0) return;
+    const orderHeader = orderHeaderRes.recordset[0];
 
     // 2. Get Items
     const itemsRes = await pool.request()
@@ -370,16 +371,19 @@ async function generateAndQueueReceipt(orderId, paymentMode = 'ONLINE') {
        modifiers: item.ModifiersJSON ? JSON.parse(item.ModifiersJSON) : []
     }));
 
-    // 3. Get Company details (AppSettings)
-    const appSettingsRes = await pool.request().query("SELECT TOP 1 ShopName, Address, GstNo, Phone FROM AppSettings");
-    const settings = appSettingsRes.recordset[0] || {};
+    // 3. Get Company details (AppSettings + Organization)
+    const appSettingsRes = await pool.request().query("SELECT TOP 1 ShopName FROM AppSettings");
+    const orgRes = await pool.request().query("SELECT TOP 1 Name, Address1_Line1, Address1_Telephone1, GstRegno FROM Organization");
+    
+    const appRow = appSettingsRes.recordset[0] || {};
+    const orgRow = orgRes.recordset[0] || {};
     
     const company = {
-        name: settings.ShopName || "POS SYSTEM",
-        address: settings.Address || "",
-        gstNo: settings.GstNo || "",
-        tel: settings.Phone || "",
-        currencySymbol: "$"
+        name: appRow.ShopName || orgRow.Name || "POS SYSTEM",
+        address: orgRow.Address1_Line1 || "",
+        gstNo: orgRow.GstRegno || "",
+        tel: orgRow.Address1_Telephone1 || "",
+        currencySymbol: "₹"
     };
 
     // 4. Determine Printer Type
@@ -424,8 +428,8 @@ async function generateAndQueueReceipt(orderId, paymentMode = 'ONLINE') {
     const discountInfo = {
         applied: (orderHeader.DiscountAmount || 0) > 0,
         amount: orderHeader.DiscountAmount || 0,
-        type: orderHeader.DiscountType, // 'percentage' or 'flat'
-        value: orderHeader.DiscountValue
+        type: 'flat',
+        value: orderHeader.DiscountValue || orderHeader.DiscountAmount || 0
     };
 
     const thermalText = formatThermalTextWithDiscount(saleData, company, discountInfo);
