@@ -3,6 +3,10 @@ const crypto = require("crypto");
 const router = express.Router();
 const sql = require("mssql");
 const { poolPromise } = require("../config/db");
+const {
+  generateAndQueueKOTs,
+  generateAndQueueReceipt
+} = require("../utils/printHelper");
 const DEFAULT_GUID = "00000000-0000-0000-0000-000000000000";
 
 const NOTE_KEYS = ["note", "Note", "notes", "Notes", "remarks", "Remarks"];
@@ -1271,6 +1275,10 @@ router.post("/mark-sent", async (req, res) => {
 
     console.log("Rows Updated:", result.rowsAffected);
 
+    if (enableKotQr === 1) {
+      await generateAndQueueKOTs(orderId);
+    }
+
     if (enableKotQr === 1 && req.io) {
       req.io.emit("qr-print-request", {
         orderId: orderId,
@@ -1528,7 +1536,7 @@ router.post("/complete-online-payment", async (req, res) => {
 
     // ── STEP 6: INSERT PAYMENT DETAIL ────────────────────────────────────────
     const paymodeRes = await transaction.request()
-      .input("payMode", sql.NVarChar(50), pMethod)
+      .input("payMode", sql.NVarChar(50), 'Yeahpay Paynow')
       .query(`SELECT TOP 1 Position FROM Paymode WHERE UPPER(LTRIM(RTRIM(PayMode))) = UPPER(LTRIM(RTRIM(@payMode)))`);
     const paymodePosition = paymodeRes.recordset[0]?.Position || 3;
 
@@ -1624,6 +1632,23 @@ router.post("/complete-online-payment", async (req, res) => {
 
     await transaction.commit();
     console.log(`✅ [PAYMENT] ✅✅✅ ALL COMPLETE for order ${orderId}`);
+
+    const appSettings = await poolPromise.then(pool => pool.request().query("SELECT TOP 1 Enablekotqr FROM AppSettings"));
+    const enableKotQr = Number(appSettings.recordset[0]?.Enablekotqr || 0);
+    if (enableKotQr === 1) {
+      try {
+        await generateAndQueueKOTs(orderId);
+      } catch (err) {
+        console.error("Failed to queue KOT:", err);
+      }
+
+      try {
+        // Also print checkout receipt for online payments
+        await generateAndQueueReceipt(orderId, "ONLINE");
+      } catch (err) {
+        console.error("Failed to queue receipt:", err);
+      }
+    }
 
     if (req.io) {
       req.io.emit("qr-print-request", {

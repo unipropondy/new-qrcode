@@ -533,17 +533,6 @@ function App() {
       setPaymentDone(true);
       handlePaymentSuccess(`Payment Successful! Amount: S$${amount}`);
 
-      // KOT PRINT — always fires on successful online payment
-      try {
-        await UniversalPrinter.printKOT(
-          { items: cart, tableNo: tableNo, orderId: posOrderId },
-          null,
-          "NEW"
-        );
-      } catch (printErr) {
-        console.warn("[KOT print] failed:", printErr);
-      }
-
       // 5. OPEN SETTLEMENT PAGE
       setTimeout(() => {
         window.location.href =
@@ -1644,15 +1633,7 @@ function App() {
                                 paymentStatus: 0
                               })
                             });
-
-                            if (enableKotQr === 1) {
-                              const orderData = {
-                                items: cart,
-                                tableNo: tableNo,
-                                orderId: currentOrderId
-                              };
-                              await UniversalPrinter.printKOT(orderData, null, "NEW");
-                            }
+                            // KOT Printing is now handled by the backend
 
                           } catch (e) {
                             console.error(e);
@@ -1786,16 +1767,7 @@ function App() {
                       `Payment Successful! TXN: ${data.transactionId}`
                     );
 
-                    // KOT PRINT — always fires on successful online payment
-                    try {
-                      await UniversalPrinter.printKOT(
-                        { items: cart, tableNo: tableNo, orderId: currentOrderId },
-                        null,
-                        "NEW"
-                      );
-                    } catch (printErr) {
-                      console.warn("[KOT print] failed:", printErr);
-                    }
+                    // KOT PRINT is now handled by backend
 
 
                     // ✅ Open SettlementSuccess Screen

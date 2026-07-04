@@ -95,6 +95,9 @@ async function isBridgeOnline() {
 }
 
 async function queuePrintJob(printerType, kitchenTypeValue, content) {
+    console.log("========== QUEUE PRINT ==========");
+  console.log("Printer Type:", printerType);
+  console.log("Kitchen Type:", kitchenTypeValue);
   try {
     const storeId = "STORE_001";
     const response = await fetch(`${API_URL}/api/print-jobs`, {
@@ -152,7 +155,7 @@ async function queuePrintJob(printerType, kitchenTypeValue, content) {
 // ─────────────────────────────────────────────
 async function logPrintJob(orderId, orderNo, type) {
   try {
-    await fetch(`${API_URL}/api/orders/log-print`, {
+   await fetch(`${API_URL}/api/order/log-print`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -914,42 +917,127 @@ const UniversalPrinter = {
     }
   },
 
+  // // ── KOT Print ───────────────────────────────
+  // async printKOT(orderData, userId, type = "NEW", printerIpOverride) {
+  //   try {
+  //     const isOnline = await isBridgeOnline();
+  //     if (!isOnline) {
+  //       console.log("📡 [Web] Bridge OFFLINE — iframe fallback");
+  //       printHtmlInIframe("kot-print-iframe", generateKOTHTML(orderData, type), 50);
+  //       await logPrintJob(orderData.orderId, orderData.orderNo, type);
+  //       return true;
+  //     }
+
+  //     const text = formatKOTThermalText(orderData, type);
+  //     const kitchenTypeValue =
+  //       orderData.kitchenCode ||
+  //       orderData.KitchenCode ||
+  //       orderData.kitchenTypeValue ||
+  //       orderData.KitchenTypeValue ||
+  //       "0";
+  //     const success = await queuePrintJob(2, kitchenTypeValue, text);
+  //     if (success) {
+  //       await logPrintJob(orderData.orderId, orderData.orderNo, type);
+  //       return true;
+  //     }
+
+  //     // Fallback
+  //     console.warn("⚠️ [Web KOT] Bridge queue failed — iframe fallback");
+  //     printHtmlInIframe("kot-print-iframe", generateKOTHTML(orderData, type), 800);
+  //     await logPrintJob(orderData.orderId, orderData.orderNo, type);
+  //     return true;
+  //   } catch (err) {
+  //     console.warn("[UniversalPrinter] KOT print error, iframe fallback:", err);
+  //     printHtmlInIframe("kot-print-iframe", generateKOTHTML(orderData, type), 800);
+  //     await logPrintJob(orderData.orderId, orderData.orderNo, type);
+  //     return true;
+  //   }
+  // },
   // ── KOT Print ───────────────────────────────
-  async printKOT(orderData, userId, type = "NEW", printerIpOverride) {
-    try {
-      const isOnline = await isBridgeOnline();
-      if (!isOnline) {
-        console.log("📡 [Web] Bridge OFFLINE — iframe fallback");
-        printHtmlInIframe("kot-print-iframe", generateKOTHTML(orderData, type), 50);
-        await logPrintJob(orderData.orderId, orderData.orderNo, type);
-        return true;
-      }
+async printKOT(orderData, userId, type = "NEW", printerIpOverride) {
 
-      const text = formatKOTThermalText(orderData, type);
-      const kitchenTypeValue =
-        orderData.kitchenCode ||
-        orderData.KitchenCode ||
-        orderData.kitchenTypeValue ||
-        orderData.KitchenTypeValue ||
-        "0";
-      const success = await queuePrintJob(2, kitchenTypeValue, text);
-      if (success) {
-        await logPrintJob(orderData.orderId, orderData.orderNo, type);
-        return true;
-      }
+  console.log("========== KOT PRINT START ==========");
+  console.log("Order Data:", orderData);
+  console.log("Items:", orderData.items);
 
-      // Fallback
-      console.warn("⚠️ [Web KOT] Bridge queue failed — iframe fallback");
-      printHtmlInIframe("kot-print-iframe", generateKOTHTML(orderData, type), 800);
+  try {
+
+    console.log("Checking Bridge Status...");
+
+    const isOnline = await isBridgeOnline();
+
+    console.log("Bridge Online:", isOnline);
+
+    if (!isOnline) {
+      console.log("📡 Bridge OFFLINE - iframe fallback");
+
+      printHtmlInIframe(
+        "kot-print-iframe",
+        generateKOTHTML(orderData, type),
+        50
+      );
+
       await logPrintJob(orderData.orderId, orderData.orderNo, type);
-      return true;
-    } catch (err) {
-      console.warn("[UniversalPrinter] KOT print error, iframe fallback:", err);
-      printHtmlInIframe("kot-print-iframe", generateKOTHTML(orderData, type), 800);
-      await logPrintJob(orderData.orderId, orderData.orderNo, type);
+
       return true;
     }
-  },
+
+    console.log("Generating Thermal Text...");
+
+    const text = formatKOTThermalText(orderData, type);
+
+    console.log(text);
+
+    const kitchenTypeValue =
+      orderData.kitchenCode ||
+      orderData.KitchenCode ||
+      orderData.kitchenTypeValue ||
+      orderData.KitchenTypeValue ||
+      "0";
+
+    console.log("Kitchen Type:", kitchenTypeValue);
+
+    console.log("Sending Print Job...");
+
+    const success = await queuePrintJob(2, kitchenTypeValue, text);
+
+    console.log("Queue Result:", success);
+
+    if (success) {
+      console.log("✅ Print Success");
+
+      await logPrintJob(orderData.orderId, orderData.orderNo, type);
+
+      return true;
+    }
+
+    console.warn("⚠️ Queue Failed - iframe fallback");
+
+    printHtmlInIframe(
+      "kot-print-iframe",
+      generateKOTHTML(orderData, type),
+      800
+    );
+
+    await logPrintJob(orderData.orderId, orderData.orderNo, type);
+
+    return true;
+
+  } catch (err) {
+
+    console.error("PRINT ERROR:", err);
+
+    printHtmlInIframe(
+      "kot-print-iframe",
+      generateKOTHTML(orderData, type),
+      800
+    );
+
+    await logPrintJob(orderData.orderId, orderData.orderNo, type);
+
+    return true;
+  }
+},
 
   // ── Smart Print (Receipt with Discount) ──────
   async smartPrint(saleData, outletId, t, discountInfo, preferredType, isReprint = false) {
