@@ -54,20 +54,11 @@ function App() {
   const [tempUpiUpiId, setTempUpiUpiId] = useState('');
 
   const handlePaymentSuccess = (msg) => {
-
-  skipSaveRef.current = true;
-
-  setCart((prev) =>
-    prev.map((item) => ({
-      ...item,
-      status: "SENT"
-    }))
-  );
-
-  setShowPaymentPopup(false);
-  setSuccessMessage(msg);
-  setTimeout(() => setSuccessMessage(""), 3000);
-};
+    setCart((prev) => prev.map((item) => ({ ...item, status: "SENT" })));
+    setShowPaymentPopup(false);
+    setSuccessMessage(msg);
+    setTimeout(() => setSuccessMessage(""), 3000);
+  };
 
 
   // Modal states
@@ -544,10 +535,10 @@ function App() {
       handlePaymentSuccess(`Payment Successful! Amount: S$${amount}`);
 
       // 5. OPEN SETTLEMENT PAGE
-      // setTimeout(() => {
-      //   window.location.href =
-      //     `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${posOrderId}`;
-      // }, 1000);
+      setTimeout(() => {
+        window.location.href =
+          `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${posOrderId}`;
+      }, 1000);
 
     } catch (err) {
 
@@ -557,7 +548,6 @@ function App() {
   };
 
   const saveCartToBackend = async () => {
-    if (paymentDone) return;
     setIsCartLoading(true);
     try {
 
