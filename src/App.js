@@ -544,10 +544,10 @@ function App() {
       handlePaymentSuccess(`Payment Successful! Amount: S$${amount}`);
 
       // 5. OPEN SETTLEMENT PAGE
-      setTimeout(() => {
-        window.location.href =
-          `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${posOrderId}`;
-      }, 1000);
+      // setTimeout(() => {
+      //   window.location.href =
+      //     `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${posOrderId}`;
+      // }, 1000);
 
     } catch (err) {
 
