@@ -228,12 +228,13 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
       }
     }
 
-    const detailCheck = await transaction.request().input("detailId", sql.UniqueIdentifier, lineItemId).query("SELECT OrderDetailId FROM RestaurantOrderDetailCur WHERE OrderDetailId = @detailId");
+    const detailCheck = await transaction.request().input("detailId", sql.UniqueIdentifier, lineItemId).query("SELECT OrderDetailId,StatusCode FROM RestaurantOrderDetailCur WHERE OrderDetailId = @detailId");
     if (
-      detailCheck.recordset.length > 0 &&
-      detailCheck.recordset[0].StatusCode !== 4 &&
-      detailCheck.recordset[0].StatusCode !== 3 &&
-      detailCheck.recordset[0].StatusCode !== 2
+      detailCheck.recordset.length > 0
+      //  &&
+      // detailCheck.recordset[0].StatusCode !== 4 &&
+      // detailCheck.recordset[0].StatusCode !== 3 &&
+      // detailCheck.recordset[0].StatusCode !== 2
     ) {
       await transaction.request()
         .input("detailId", sql.UniqueIdentifier, lineItemId)
