@@ -133,6 +133,9 @@ function App() {
 
     if (!tableNo) return;
 
+    // ✅ FIX: Do not save cart after payment is completed
+    if (paymentDone) return;
+
     if (skipSaveRef.current) {
       skipSaveRef.current = false;
       return;
@@ -140,7 +143,7 @@ function App() {
 
     saveCartToBackend();
 
-  }, [cart]);
+  }, [cart, paymentDone]);
 
   const loadKitchens = async () => {
     try {
@@ -548,6 +551,12 @@ function App() {
   };
 
   const saveCartToBackend = async () => {
+    // ✅ FIX: Prevent inserting new records into RestaurantOrderDetailCur after payment
+    if (paymentDone) {
+      console.log("[saveCart] Skipped — payment already done.");
+      setIsCartLoading(false);
+      return;
+    }
     setIsCartLoading(true);
     try {
 
