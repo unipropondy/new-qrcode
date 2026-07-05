@@ -54,11 +54,20 @@ function App() {
   const [tempUpiUpiId, setTempUpiUpiId] = useState('');
 
   const handlePaymentSuccess = (msg) => {
-    setCart((prev) => prev.map((item) => ({ ...item, status: "SENT" })));
-    setShowPaymentPopup(false);
-    setSuccessMessage(msg);
-    setTimeout(() => setSuccessMessage(""), 3000);
-  };
+
+  skipSaveRef.current = true;
+
+  setCart((prev) =>
+    prev.map((item) => ({
+      ...item,
+      status: "SENT"
+    }))
+  );
+
+  setShowPaymentPopup(false);
+  setSuccessMessage(msg);
+  setTimeout(() => setSuccessMessage(""), 3000);
+};
 
 
   // Modal states
@@ -548,6 +557,7 @@ function App() {
   };
 
   const saveCartToBackend = async () => {
+    if (paymentDone) return;
     setIsCartLoading(true);
     try {
 
