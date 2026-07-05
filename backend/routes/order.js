@@ -207,6 +207,12 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
     // }
 
     if (!lineItemId || lineItemId.length < 10) {
+
+      console.log("Generated New LineItemId", {
+    orderNo: cleanOrderNo,
+    dish: dishName,
+    lineItemId
+});
       const matchCheck = await transaction.request()
         .input("orderId", sql.UniqueIdentifier, orderGuid)
         .input("dishId", sql.UniqueIdentifier, finalProdId)
