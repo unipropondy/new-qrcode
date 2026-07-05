@@ -418,7 +418,6 @@ async function syncTableStatus(req, tableId) {
         ELSE 0 
     END, 
        entry_status = 'q',
-       PAYMENT_STATUS = NULL,
         TotalAmount = @total, 
         CurrentOrderId = @ActualOrderNo,
         StartTime = CASE WHEN @count > 0 AND (StartTime IS NULL OR StartTime < '2000-01-01') THEN GETDATE() 
@@ -502,7 +501,6 @@ router.post("/save-cart", async (req, res) => {
           SET Status = CASE WHEN @oid IS NOT NULL THEN 1 ELSE 0 END, 
               CurrentOrderId = @oid,
                entry_status = 'q',
-               PAYMENT_STATUS = NULL,
               StartTime = CASE WHEN @oid IS NOT NULL AND (StartTime IS NULL OR StartTime < '2000-01-01') THEN GETDATE() 
                                WHEN @oid IS NULL THEN NULL 
                                ELSE StartTime END
@@ -622,7 +620,6 @@ router.post("/send", async (req, res) => {
           UPDATE TableMaster 
           SET Status = 1, 
               entry_status ='q',
-              PAYMENT_STATUS = NULL,
               CurrentOrderId = @oid,
               StartTime = CASE WHEN StartTime IS NULL OR StartTime < '2000-01-01' THEN GETDATE() ELSE StartTime END,
               ModifiedOn = GETDATE()
@@ -903,7 +900,6 @@ router.post("/hold", async (req, res) => {
         UPDATE TableMaster 
         SET Status = 3, 
          entry_status = 'q',
-         PAYMENT_STATUS = NULL,
             ModifiedOn = GETDATE() 
         WHERE TableId = @tid
       `);
@@ -927,7 +923,7 @@ router.post("/checkout", async (req, res) => {
       .input("tid", sql.UniqueIdentifier, cleanId)
       .query(`
         -- 1. Update Table Status to Checkout (2)
-        UPDATE TableMaster SET Status = 2,  entry_status = 'q',PAYMENT_STATUS = NULL, ModifiedOn = GETDATE() WHERE TableId = @tid;
+        UPDATE TableMaster SET Status = 2,  entry_status = 'q', ModifiedOn = GETDATE() WHERE TableId = @tid;
 
         -- 2. Mark all active items for this table as SERVED (4) so they leave KDS
         UPDATE d
@@ -1427,59 +1423,59 @@ router.post("/complete-online-payment", async (req, res) => {
     let dbItems = itemsRes.recordset;
 
     // If no items found, create from cart
-    if (dbItems.length === 0 && cart && cart.length > 0) {
-      console.log(`⚠️ [PAYMENT] No items found, creating ${cart.length} items from cart`);
+    // if (dbItems.length === 0 && cart && cart.length > 0) {
+    //   console.log(`⚠️ [PAYMENT] No items found, creating ${cart.length} items from cart`);
 
-      for (const item of cart) {
-        const itemId = crypto.randomUUID();
-        const dishId = item.id || item.DishId || DEFAULT_GUID;
-        const dishName = item.name || item.Name || "Unknown";
-        const qty = item.qty || 1;
-        const price = item.price || item.Price || 0;
+    //   for (const item of cart) {
+    //     const itemId = crypto.randomUUID();
+    //     const dishId = item.id || item.DishId || DEFAULT_GUID;
+    //     const dishName = item.name || item.Name || "Unknown";
+    //     const qty = item.qty || 1;
+    //     const price = item.price || item.Price || 0;
 
-        await transaction.request()
-          .input("detailId", sql.UniqueIdentifier, itemId)
-          .input("orderId", sql.UniqueIdentifier, guidOrderId)
-          .input("dishId", sql.UniqueIdentifier, dishId)
-          .input("dishName", sql.NVarChar(255), dishName)
-          .input("qty", sql.Int, qty)
-          .input("price", sql.Decimal(18, 2), price)
-          .input("bizId", sql.UniqueIdentifier, businessUnitId)
-          .input("orderNo", sql.NVarChar(50), orderId)
-          .input("userId", sql.UniqueIdentifier, DEFAULT_GUID)
-          .query(`
-                        INSERT INTO RestaurantOrderDetailCur (
-                            OrderDetailId, OrderId, DishId, DishName, Quantity, PricePerUnit,
-                            ActualAmount, TotalDetailLineAmount, StatusCode, CreatedOn,
-                            BusinessUnitId, OrderNumber, CreatedBy, Description
-                        ) VALUES (
-                            @detailId, @orderId, @dishId, @dishName, @qty, @price,
-                            @price * @qty, @price * @qty, 2, GETDATE(),
-                            @bizId, @orderNo, @userId, @dishName
-                        )
-                    `);
-      }
+    //     await transaction.request()
+    //       .input("detailId", sql.UniqueIdentifier, itemId)
+    //       .input("orderId", sql.UniqueIdentifier, guidOrderId)
+    //       .input("dishId", sql.UniqueIdentifier, dishId)
+    //       .input("dishName", sql.NVarChar(255), dishName)
+    //       .input("qty", sql.Int, qty)
+    //       .input("price", sql.Decimal(18, 2), price)
+    //       .input("bizId", sql.UniqueIdentifier, businessUnitId)
+    //       .input("orderNo", sql.NVarChar(50), orderId)
+    //       .input("userId", sql.UniqueIdentifier, DEFAULT_GUID)
+    //       .query(`
+    //                     INSERT INTO RestaurantOrderDetailCur (
+    //                         OrderDetailId, OrderId, DishId, DishName, Quantity, PricePerUnit,
+    //                         ActualAmount, TotalDetailLineAmount, StatusCode, CreatedOn,
+    //                         BusinessUnitId, OrderNumber, CreatedBy, Description
+    //                     ) VALUES (
+    //                         @detailId, @orderId, @dishId, @dishName, @qty, @price,
+    //                         @price * @qty, @price * @qty, 2, GETDATE(),
+    //                         @bizId, @orderNo, @userId, @dishName
+    //                     )
+    //                 `);
+    //   }
 
-      // Re-fetch items
-      itemsRes = await transaction.request()
-        .input("orderId", sql.UniqueIdentifier, guidOrderId)
-        .query(`
-                    SELECT
-                        d.DishId, d.DishName, d.Quantity, d.PricePerUnit,
-                        d.TotalDetailLineAmount, d.StatusCode,
-                        dish.DishGroupId,
-                        dg.CategoryId,
-                        cm.CategoryName,
-                        dg.DishGroupName
-                    FROM RestaurantOrderDetailCur d
-                    LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
-                    LEFT JOIN DishGroupMaster dg ON dish.DishGroupId = dg.DishGroupId
-                    LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
-                    WHERE d.OrderId = @orderId
-                      AND d.StatusCode NOT IN (0)
-                `);
-      dbItems = itemsRes.recordset;
-    }
+    //   // Re-fetch items
+    //   itemsRes = await transaction.request()
+    //     .input("orderId", sql.UniqueIdentifier, guidOrderId)
+    //     .query(`
+    //                 SELECT
+    //                     d.DishId, d.DishName, d.Quantity, d.PricePerUnit,
+    //                     d.TotalDetailLineAmount, d.StatusCode,
+    //                     dish.DishGroupId,
+    //                     dg.CategoryId,
+    //                     cm.CategoryName,
+    //                     dg.DishGroupName
+    //                 FROM RestaurantOrderDetailCur d
+    //                 LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
+    //                 LEFT JOIN DishGroupMaster dg ON dish.DishGroupId = dg.DishGroupId
+    //                 LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
+    //                 WHERE d.OrderId = @orderId
+    //                   AND d.StatusCode NOT IN (0)
+    //             `);
+    //   dbItems = itemsRes.recordset;
+    // }
 
     const subTotal = dbItems.reduce((sum, i) => sum + (i.TotalDetailLineAmount || 0), 0);
     console.log(`🔍 [PAYMENT] Found ${dbItems.length} items, SubTotal: ${subTotal}`);
@@ -1619,18 +1615,21 @@ router.post("/complete-online-payment", async (req, res) => {
                     END
                 END
 
-                -- Archive details
+                -- Archive details (only rows not already archived)
                 INSERT INTO RestaurantOrderDetail (
                     OrderDetailId, OrderId, DishId, Description, DishName, Quantity, 
                     PricePerUnit, ActualAmount, TotalDetailLineAmount, StatusCode, 
                     CreatedBy, CreatedOn, BusinessUnitId, OrderDateTime
                 )
                 SELECT 
-                    OrderDetailId, OrderId, DishId, Description, DishName, Quantity, 
-                    PricePerUnit, ActualAmount, TotalDetailLineAmount, 3, 
-                    CreatedBy, CreatedOn, BusinessUnitId, OrderDateTime
-                FROM RestaurantOrderDetailCur 
-                WHERE OrderId = (SELECT OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo);
+                    d.OrderDetailId, d.OrderId, d.DishId, d.Description, d.DishName, d.Quantity, 
+                    d.PricePerUnit, d.ActualAmount, d.TotalDetailLineAmount, 3, 
+                    d.CreatedBy, d.CreatedOn, d.BusinessUnitId, d.OrderDateTime
+                FROM RestaurantOrderDetailCur d
+                WHERE d.OrderId = (SELECT OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM RestaurantOrderDetail rd WHERE rd.OrderDetailId = d.OrderDetailId
+                  );
             `);
     console.log(`✅ [PAYMENT] Order archived`);
 

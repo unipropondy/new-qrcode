@@ -520,6 +520,7 @@ function App() {
           cart: cart
         })
       });
+      
 
       const data = await res.json();
       console.log("UNIFIED COMPLETE PAYMENT RESPONSE:", data);
