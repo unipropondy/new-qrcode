@@ -780,7 +780,8 @@ router.post("/cancel", async (req, res) => {
     // const transaction = new sql.Transaction(pool);
     // await transaction.begin();
     try {
-      const settlementId = crypto.randomUUID();
+      // const settlementId = crypto.randomUUID();
+      let settlementId = crypto.randomUUID();
 
       // 2. Insert into SettlementHeader (Cancelled Status)
       await transaction.request()
