@@ -43,6 +43,8 @@ useEffect(() => {
 
       const data = await res.json();
 
+     console.log("ORDER DETAILS:", JSON.stringify(data, null, 2));
+
       setOrders(Array.isArray(data) ? data : []);
 
       if (data.length > 0) {
@@ -160,35 +162,86 @@ const totalQty = (Array.isArray(orders) ? orders : []).reduce(
                 {item.Quantity}x
               </div>
 
-              <div className="settlement-item-content">
+             <div className="settlement-item-content">
 
-                <div className="settlement-dish-top">
+                    {/* Dish Name + Price */}
+                    <div className="settlement-dish-top">
 
-                  <div className="settlement-dish-name">
-                    {item.DishName}
+                      <div className="settlement-dish-name">
+                        {item.DishName}
+                      </div>
+
+                      <div className="settlement-item-price">
+                        ${Number(item.Price || 0).toFixed(2)}
+                      </div>
+
+                    </div>
+
+                    {/* Combo Selections */}
+                  {item.ComboDetailsJSON &&
+                      (() => {
+                        let comboDetails = [];
+
+                        try {
+                          comboDetails = JSON.parse(item.ComboDetailsJSON);
+                        } catch (e) {
+                          console.log("Invalid ComboDetailsJSON:", item.ComboDetailsJSON);
+                          return null;
+                        }
+
+                        return (
+                          <div className="settlement-mods">
+                            {comboDetails.map((group, index) => (
+                              <div key={index} style={{ marginTop: "4px" }}>
+                                <div
+                                  style={{
+                                    color: "#f97316",
+                                    fontWeight: 600,
+                                    fontSize: "14px",
+                                  }}
+                                >
+                                  {group.groupName}
+                                </div>
+
+                                {group.items?.map((option, idx) => (
+                                  <div
+                                    key={idx}
+                                    style={{
+                                      marginLeft: "14px",
+                                      color: "#666",
+                                      fontSize: "13px",
+                                    }}
+                                  >
+                                    ↳ {option.name}
+                                  </div>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+
+                    {/* Normal Modifiers */}
+                    {item.ModifierNames && (
+                      <div className="settlement-mods">
+                        {item.ModifierNames}
+                      </div>
+                    )}
+
+                    {/* Status */}
+                    <div className="settlement-status-row">
+                      <div
+                        className={`settlement-status ${
+                          item.StatusLabel === "READY"
+                            ? "ready"
+                            : "preparing"
+                        }`}
+                      >
+                        {item.StatusLabel}
+                      </div>
+                    </div>
+
                   </div>
-
-                  <div className="settlement-item-price">
-                    ${Number(item.Price || 0).toFixed(2)}
-                  </div>
-
-                </div>
-
-                <div className="settlement-status-row">
-
-                <div
-                className={`settlement-status ${
-                  item.StatusLabel === "READY"
-                    ? "ready"
-                    : "preparing"
-                }`}
-              >
-                {item.StatusLabel}
-              </div>
-
-                </div>
-
-              </div>
 
             </div>
 

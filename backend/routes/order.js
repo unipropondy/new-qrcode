@@ -228,6 +228,8 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
       }
     }
 
+    const comboDetailsJSON = JSON.stringify(item.comboSelections || []).substring(0, 4000);
+
     const detailCheck = await transaction.request().input("detailId", sql.UniqueIdentifier, lineItemId).query("SELECT OrderDetailId,StatusCode FROM RestaurantOrderDetailCur WHERE OrderDetailId = @detailId");
     if (detailCheck.recordset.length > 0) {
       if (
@@ -246,6 +248,7 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
             toGuidOrNull(finalUserId) || DEFAULT_GUID
           )
           .input("mods", sql.NVarChar(sql.MAX), modsJSON)
+          .input("comboDetailsJSON", sql.NVarChar(sql.MAX), comboDetailsJSON)
           .input(
             "orderNo",
             sql.NVarChar(20),
@@ -258,7 +261,7 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
             String(noteInfo.value || "").substring(0, 100)
           )
           .input("isTakeaway", sql.Bit, takeawayInfo.value ? 1 : 0)
-          .query("UPDATE RestaurantOrderDetailCur SET Quantity = @qty, PricePerUnit = @cost, ActualAmount = @cost * @qty, TotalDetailLineAmount = @cost * @qty, StatusCode = @statusCode, Description = @dishName, DishName = @dishName, ModifiedBy = @userId, ModifiedOn = GETDATE(), ModifiersJSON = @mods, OrderNumber = @orderNo, Remarks = @note, isTakeAway = @isTakeaway WHERE OrderDetailId = @detailId AND StatusCode <> 4 and StatusCode <> 3 and StatusCode <> 2");
+          .query("UPDATE RestaurantOrderDetailCur SET Quantity = @qty, PricePerUnit = @cost, ActualAmount = @cost * @qty, TotalDetailLineAmount = @cost * @qty, StatusCode = @statusCode, Description = @dishName, DishName = @dishName, ModifiedBy = @userId, ModifiedOn = GETDATE(), ModifiersJSON = @mods, ComboDetailsJSON = @comboDetailsJSON, OrderNumber = @orderNo, Remarks = @note, isTakeAway = @isTakeaway WHERE OrderDetailId = @detailId AND StatusCode <> 4 and StatusCode <> 3 and StatusCode <> 2");
       }
     } else {
       await transaction.request()
@@ -274,6 +277,7 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
           toGuidOrNull(finalUserId) || DEFAULT_GUID
         )
         .input("mods", sql.NVarChar(sql.MAX), modsJSON)
+        .input("comboDetailsJSON", sql.NVarChar(sql.MAX), comboDetailsJSON)
         .input(
           "orderNo",
           sql.NVarChar(20),
@@ -313,7 +317,8 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
     OrderDateTime,
     isProcesse,
     isReady,
-    isDelivered
+    isDelivered,
+    ComboDetailsJSON
   )
   VALUES
   (
@@ -337,7 +342,8 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
     GETDATE(),
     0,
     0,
-    0
+    0,
+    @comboDetailsJSON
   )
 `);
     }
@@ -577,7 +583,7 @@ router.post("/send", async (req, res) => {
         finalOrderId === "#NEW" ||
         finalOrderId === "PENDING"
       ) {
-        finalOrderId = `ORD${Date.now().toString().slice(-6)}`;
+       finalOrderId = await getOrGenerateOrderId(req, cleanId);
       }
 
       // 2. FORCE SENT STATUS — use items from client, or fall back to DB items
@@ -1172,7 +1178,9 @@ router.get("/order-details/:orderId", async (req, res) => {
             d.Description,
             d.DishName,
             d.Quantity,
-            d.PricePerUnit AS Price
+            d.PricePerUnit AS Price,
+             d.ComboDetailsJSON,
+             d.ModifiersJSON
 
 
         FROM RestaurantOrderCur o
@@ -1621,10 +1629,9 @@ router.post("/complete-online-payment", async (req, res) => {
     if (cleanTableId) {
       await transaction.request()
         .input("tid", sql.UniqueIdentifier, cleanTableId)
-        // .input("pStatus", sql.Int, 1)
         .query(`
                     UPDATE TableMaster
-                    SET PAYMENT_STATUS =1,
+                    SET PAYMENT_STATUS = 1,
                         Status = 2,
                         entry_status = 'q',
                         ModifiedOn = GETDATE()
@@ -1692,21 +1699,17 @@ router.post("/complete-online-payment", async (req, res) => {
     await transaction.commit();
     console.log(`✅ [PAYMENT] ✅✅✅ ALL COMPLETE for order ${orderId}`);
 
-    const appSettings = await poolPromise.then(pool => pool.request().query("SELECT TOP 1 Enablekotqr FROM AppSettings"));
-    const enableKotQr = Number(appSettings.recordset[0]?.Enablekotqr || 0);
-    if (enableKotQr === 1) {
-      try {
-        await generateAndQueueKOTs(orderId);
-      } catch (err) {
-        console.error("Failed to queue KOT:", err);
-      }
+    try {
+      await generateAndQueueKOTs(orderId);
+    } catch (err) {
+      console.error("Failed to queue KOT:", err);
+    }
 
-      try {
-        // Also print checkout receipt for online payments
-        await generateAndQueueReceipt(orderId, "ONLINE");
-      } catch (err) {
-        console.error("Failed to queue receipt:", err);
-      }
+    try {
+      // Also print checkout receipt for online payments
+      await generateAndQueueReceipt(orderId, "ONLINE");
+    } catch (err) {
+      console.error("Failed to queue receipt:", err);
     }
 
     if (req.io) {

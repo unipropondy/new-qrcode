@@ -46,6 +46,14 @@ function App() {
   const [showUpiModal, setShowUpiModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [enableKotQr, setEnableKotQr] = useState(0);
+  const [enableCombo, setEnableCombo] = useState(0);
+  const [showComboCustomizer, setShowComboCustomizer] = useState(false);
+  const [comboConfig, setComboConfig] = useState(null);
+  const [comboSelections, setComboSelections] = useState({});
+  const [comboError, setComboError] = useState(null);
+  const [comboLoading, setComboLoading] = useState(false);
+  const [comboDishModifiers, setComboDishModifiers] = useState([]);
+  const [selectedComboModifierIds, setSelectedComboModifierIds] = useState([]);
 
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [paynowUpiId, setPaynowUpiId] = useState('');
@@ -103,6 +111,9 @@ function App() {
         );
         setEnableKotQr(
           Number(data.Enablekotqr || 0)
+        );
+        setEnableCombo(
+          Number(data.EnableCombo || 0)
         );
       } catch (err) {
         console.log(err);
@@ -194,7 +205,9 @@ function App() {
   );
 
   const openModifiers = (dish) => {
-    if (dish.HasModifier) {
+    if (Number(enableCombo) === 1 && Number(dish.IsCombo) === 1) {
+      openComboCustomizer(dish);
+    } else if (dish.HasModifier) {
       setSelectedDish(dish);
       loadModifiers(dish.DishId);
       setSelectedModifierIds([]);
@@ -203,6 +216,215 @@ function App() {
     } else {
       addToCartSimple(dish);
     }
+  };
+
+  const openComboCustomizer = async (dish) => {
+    setSelectedDish(dish);
+    setComboLoading(true);
+    setComboError(null);
+    setComboSelections({});
+    setComboDishModifiers([]);
+    setSelectedComboModifierIds([]);
+    setShowComboCustomizer(true);
+    try {
+      const [res, modRes] = await Promise.all([
+        fetch(`${API}/combo/config/${dish.DishId}`),
+        fetch(`${API}/modifiers/${dish.DishId}`).catch(() => null)
+      ]);
+
+      if (modRes && modRes.ok) {
+        const modData = await modRes.json();
+        if (Array.isArray(modData)) {
+          setComboDishModifiers(modData);
+        }
+      }
+
+      if (!res.ok) throw new Error("Failed to load combo options.");
+      const payload = await res.json();
+      if (payload.success && payload.data) {
+        const config = payload.data;
+        setComboConfig(config);
+
+        // Auto-select defaults
+        const initialSelections = {};
+        (config.groups || []).forEach((group) => {
+          let defaults = (group.options || []).filter(o => o.isDefault).map(o => o.dishId);
+          if (!group.isMultiSelect || group.maxSelection === 1) {
+            defaults = defaults.slice(0, 1);
+          }
+          if (defaults.length === 0 && group.minSelection > 0 && group.options && group.options.length > 0) {
+            defaults = [group.options[0].dishId];
+          }
+          initialSelections[group.comboGroupId] = defaults;
+        });
+        setComboSelections(initialSelections);
+      } else {
+        throw new Error(payload.error || "Failed to load combo config.");
+      }
+    } catch (err) {
+      console.error("Combo config fetch error:", err);
+      setComboError(err.message || "Something went wrong.");
+    } finally {
+      setComboLoading(false);
+    }
+  };
+
+  const handleSelectComboOption = (groupId, option, isMulti, maxSelect) => {
+    setComboError(null);
+    setComboSelections((prev) => {
+      const current = prev[groupId] || [];
+      if (current.includes(option.dishId)) {
+        return {
+          ...prev,
+          [groupId]: current.filter((id) => id !== option.dishId)
+        };
+      } else {
+        if (isMulti) {
+          if (current.length >= maxSelect) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [groupId]: [...current, option.dishId]
+          };
+        } else {
+          return {
+            ...prev,
+            [groupId]: [option.dishId]
+          };
+        }
+      }
+    });
+  };
+
+  const handleToggleComboModifier = (modId) => {
+    setSelectedComboModifierIds((prev) =>
+      prev.includes(modId)
+        ? prev.filter((id) => id !== modId)
+        : [...prev, modId]
+    );
+  };
+
+  const calculateComboTotal = () => {
+    if (!comboConfig) return 0;
+    
+    let totalSurcharge = 0;
+    (comboConfig.groups || []).forEach(group => {
+      const selectedIds = comboSelections[group.comboGroupId] || [];
+      const selectedOptions = (group.options || []).filter(o => selectedIds.includes(o.dishId));
+      selectedOptions.forEach(opt => {
+        totalSurcharge += (opt.surcharge || 0) + (opt.dishPrice || 0);
+      });
+    });
+
+    const chosenModifiers = comboDishModifiers
+      .filter(m => selectedComboModifierIds.includes(String(m.ModifierID || m.ModifierId || "")));
+    const modifierPriceTotal = chosenModifiers.reduce((sum, m) => sum + Number(m.Price || 0), 0);
+    
+    return comboConfig.basePrice + totalSurcharge + modifierPriceTotal;
+  };
+
+  const handleAddComboToCart = () => {
+    if (!comboConfig || !selectedDish) return;
+
+    // Validate minimum selections
+    for (const group of comboConfig.groups) {
+      const selectedIds = comboSelections[group.comboGroupId] || [];
+      const effectiveMin = group.options && group.options.length > 0 ? group.minSelection : 0;
+      if (selectedIds.length < effectiveMin) {
+        setComboError(`Please pick at least ${group.minSelection} choice(s) for "${group.groupName}"`);
+        return;
+      }
+    }
+
+    // Build selected modifiers list
+    const chosenModifiers = comboDishModifiers
+      .filter(m => selectedComboModifierIds.includes(String(m.ModifierID || m.ModifierId || "")))
+      .map(m => ({
+        ModifierID: String(m.ModifierID || m.ModifierId || ""),
+        ModifierName: m.ModifierName,
+        Price: Number(m.Price || 0),
+        qty: 1,
+      }));
+
+    // Build the selection details payload
+    const chosenSelections = comboConfig.groups.map(group => {
+      const selectedIds = comboSelections[group.comboGroupId] || [];
+      const selectedOptions = group.options.filter(o => selectedIds.includes(o.dishId));
+      return {
+        groupId: group.comboGroupId,
+        groupName: group.groupName,
+        items: selectedOptions.map(o => ({
+          dishId: o.dishId,
+          name: o.name,
+          surcharge: o.surcharge,
+          dishPrice: o.dishPrice || 0,
+          KitchenTypeCode: o.KitchenTypeCode,
+          KitchenTypeName: o.KitchenTypeName,
+          PrinterIP: o.PrinterIP,
+        }))
+      };
+    });
+
+    // Sum surcharges and dish prices
+    let totalSurcharge = 0;
+    chosenSelections.forEach(grp => {
+      grp.items.forEach(opt => {
+        totalSurcharge += opt.surcharge + (opt.dishPrice || 0);
+      });
+    });
+
+    const modifierPriceTotal = chosenModifiers.reduce((sum, m) => sum + m.Price, 0);
+    const finalPrice = comboConfig.basePrice + totalSurcharge + modifierPriceTotal;
+
+    const newCartItem = {
+      ...selectedDish,
+      cartId: crypto.randomUUID(),
+      qty: 1,
+      isCombo: true,
+      price: finalPrice,
+      Price: finalPrice,
+      basePrice: comboConfig.basePrice,
+      comboSelections: chosenSelections,
+      selectedMods: chosenModifiers,
+      status: "NEW"
+    };
+
+    actionRef.current = "INSERT";
+    setCart(prev => [...prev, newCartItem]);
+    setShowComboCustomizer(false);
+  };
+
+  const handleAddBaseComboDirectly = () => {
+    if (!selectedDish) return;
+
+    const chosenModifiers = comboDishModifiers
+      .filter(m => selectedComboModifierIds.includes(String(m.ModifierID || m.ModifierId || "")))
+      .map(m => ({
+        ModifierID: String(m.ModifierID || m.ModifierId || ""),
+        ModifierName: m.ModifierName,
+        Price: Number(m.Price || 0),
+        qty: 1,
+      }));
+
+    const modifierPriceTotal = chosenModifiers.reduce((sum, m) => sum + m.Price, 0);
+    const finalPrice = Number(selectedDish.Price || selectedDish.price || 0) + modifierPriceTotal;
+
+    const newCartItem = {
+      ...selectedDish,
+      cartId: crypto.randomUUID(),
+      qty: 1,
+      isCombo: true,
+      price: finalPrice,
+      Price: finalPrice,
+      selectedMods: chosenModifiers,
+      comboSelections: [],
+      status: "NEW"
+    };
+
+    actionRef.current = "INSERT";
+    setCart(prev => [...prev, newCartItem]);
+    setShowComboCustomizer(false);
   };
 
   const loadModifiers = async (dishId) => {
@@ -583,6 +805,9 @@ function App() {
               /^[0-9a-fA-F-]{36}$/.test(m.ModifierID)
           ),
 
+           comboSelections: item.comboSelections || [],
+  lineItemId: item.lineItemId || item.OrderDetailId || null,
+
           note: item.note || "",
 
           status: "NEW",
@@ -698,6 +923,9 @@ function App() {
               qty: 1,
             })),
 
+             comboSelections: item.comboSelections || [],
+  lineItemId: item.lineItemId || item.OrderDetailId || null,
+
           note: item.note || "",
 
           status: "SENT",
@@ -767,6 +995,12 @@ function App() {
 
           selectedMods:
             item.modifiers || [],
+
+             comboSelections:
+    item.comboSelections ||
+    (item.ComboDetailsJSON
+      ? JSON.parse(item.ComboDetailsJSON)
+      : []),
         }));
 
         skipSaveRef.current = true;
@@ -1296,16 +1530,49 @@ function App() {
 
                               <div className="ci-info">
 
-                                <div className="ci-name">
-                                  {item.Name || item.name}
-                                  {item.selectedMods?.length > 0 && (
-                                    <div className="ci-mods">
-                                      {item.selectedMods
-                                        .map((m) => m.ModifierName)
-                                        .join(", ")}
-                                    </div>
-                                  )}
-                                </div>
+                               <div className="ci-name">
+
+  <div className="ci-title">
+    {item.Name || item.name}
+  </div>
+
+  {item.selectedMods?.length > 0 && (
+    <div className="ci-mods">
+      {item.selectedMods
+        .map((m) => m.ModifierName)
+        .join(", ")}
+    </div>
+  )}
+
+  {item.comboSelections?.length > 0 && (
+    <div className="ci-mods">
+      {item.comboSelections.map((group, index) => (
+        <div key={index} style={{ marginTop: "4px" }}>
+          <div style={{ color: "#f97316", fontWeight: "600" }}>
+            {group.groupName}:
+          </div>
+
+          {group.items?.map((option, idx) => (
+            <div
+              key={idx}
+              style={{
+                marginLeft: "12px",
+                color: "#666",
+                fontSize: "13px",
+              }}
+            >
+              ↳ {option.name}
+              {((option.surcharge || 0) + (option.dishPrice || 0)) > 0 && (
+                <> (+${((option.surcharge || 0) + (option.dishPrice || 0)).toFixed(2)})</>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )}
+
+</div>
 
                                 <div className="qty-controls">
 
@@ -1419,6 +1686,130 @@ function App() {
                   </div>
                 )}
               </div>
+
+              {/* COMBO CUSTOMIZER MODAL */}
+              {showComboCustomizer && selectedDish && (
+                <div className="modal-overlay" onClick={() => setShowComboCustomizer(false)} style={{ zIndex: 99999 }}>
+                  <div className="modal-content combo-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '650px', width: '90%' }}>
+                    <div className="modal-header">
+                      <div className="header-title-row" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span className="fast-food-icon" style={{ fontSize: '20px' }}>🍔</span>
+                        <h2 className="modal-title" style={{ margin: 0 }}>Customize {selectedDish.Name || selectedDish.name}</h2>
+                      </div>
+                      <button className="modal-close" onClick={() => setShowComboCustomizer(false)}>
+                        &times;
+                      </button>
+                    </div>
+
+                    <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+                      {comboLoading ? (
+                        <div className="loading-container" style={{ textAlign: 'center', padding: '20px' }}>
+                          <div className="spinner" style={{ display: 'inline-block', width: '30px', height: '30px', border: '3px solid #ccc', borderTopColor: '#f97316', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+                          <p style={{ marginTop: '10px', color: '#666' }}>Loading combo options...</p>
+                        </div>
+                      ) : comboError ? (
+                        <div className="error-container" style={{ textAlign: 'center', padding: '20px', color: 'red' }}>
+                          <p>{comboError}</p>
+                          <button className="btn-retry" onClick={() => openComboCustomizer(selectedDish)} style={{ background: '#f97316', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px' }}>Retry</button>
+                        </div>
+                      ) : (
+                        <div className="combo-groups">
+                          {(comboConfig?.groups || []).map((group) => {
+                            const selectedIds = comboSelections[group.comboGroupId] || [];
+                            return (
+                              <div key={group.comboGroupId} className="combo-group-section" style={{ marginBottom: '24px', borderBottom: '1px solid #eee', paddingBottom: '15px' }}>
+                                <div className="group-header" style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+                                  <h3 style={{ margin: 0, fontSize: '16px', color: '#2c3e50' }}>{group.groupName}</h3>
+                                  <span style={{ marginLeft: '8px', fontSize: '11px', background: '#f2f4f4', padding: '2px 8px', borderRadius: '12px', color: '#7f8c8d' }}>
+                                    PICK {group.minSelection === group.maxSelection ? group.minSelection : `${group.minSelection}-${group.maxSelection}`}
+                                  </span>
+                                </div>
+                                <div className="options-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                                  {(group.options || []).map((option) => {
+                                    const isSelected = selectedIds.includes(option.dishId);
+                                    return (
+                                      <div
+                                        key={option.mappingId}
+                                        className={`option-card ${isSelected ? 'selected' : ''}`}
+                                        onClick={() => handleSelectComboOption(group.comboGroupId, option, group.isMultiSelect, group.maxSelection)}
+                                        style={{
+                                          border: isSelected ? '2px solid #f97316' : '1.5px solid #eaecee',
+                                          background: isSelected ? '#fff5eb' : 'white',
+                                          borderRadius: '12px',
+                                          padding: '10px',
+                                          width: 'calc(33% - 10px)',
+                                          boxSizing: 'border-box',
+                                          cursor: 'pointer',
+                                          textAlign: 'center',
+                                          position: 'relative'
+                                        }}
+                                      >
+                                        <div style={{ fontWeight: 'bold', fontSize: '13px', color: isSelected ? '#f97316' : '#2c3e50' }}>{option.name}</div>
+                                        {(option.surcharge > 0 || option.dishPrice > 0) && (
+                                          <div style={{ fontSize: '11px', color: '#f97316', background: '#ffeedb', display: 'inline-block', padding: '1px 6px', borderRadius: '8px', marginTop: '4px' }}>
+                                            +${(option.surcharge + (option.dishPrice || 0)).toFixed(2)}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {comboDishModifiers.length > 0 && (
+                            <div className="combo-modifiers" style={{ marginTop: '20px' }}>
+                              <h3 style={{ fontSize: '15px', color: '#2c3e50', marginBottom: '10px' }}>Add Modifiers (Optional)</h3>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {comboDishModifiers.map((m) => {
+                                  const isSelected = selectedComboModifierIds.includes(String(m.ModifierID || m.ModifierId || ""));
+                                  return (
+                                    <div
+                                      key={m.ModifierID}
+                                      onClick={() => handleToggleComboModifier(String(m.ModifierID || m.ModifierId || ""))}
+                                      style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        padding: '10px 14px',
+                                        border: isSelected ? '1px solid #f97316' : '1px solid #eaecee',
+                                        background: isSelected ? '#fff5eb' : '#faf9f6',
+                                        borderRadius: '10px',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <span style={{ color: isSelected ? '#f97316' : '#7f8c8d' }}>{isSelected ? '☑' : '☐'}</span>
+                                        <span style={{ fontSize: '14px', color: '#2c3e50' }}>{m.ModifierName}</span>
+                                      </div>
+                                      {m.Price > 0 && (
+                                        <span style={{ fontWeight: 'bold', color: '#f97316' }}>+${Number(m.Price).toFixed(2)}</span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="modal-footer" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {comboError && (
+                        <div style={{ color: 'red', fontSize: '13px', textAlign: 'center', marginBottom: '5px' }}>{comboError}</div>
+                      )}
+                      <button className="btn-add" onClick={handleAddComboToCart} style={{ width: '100%', background: '#f97316', color: 'white', border: 'none', padding: '12px', borderRadius: '12px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
+                        Add Combo to Cart - ${calculateComboTotal().toFixed(2)}
+                      </button>
+                      <button className="btn-cancel" onClick={handleAddBaseComboDirectly} style={{ width: '100%', background: '#eceff1', color: '#37474f', border: 'none', padding: '12px', borderRadius: '12px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>
+                        Add Base Combo Directly (Skip Selections)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* MODIFIER MODAL */}
               {showModifier && selectedDish && (

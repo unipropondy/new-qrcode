@@ -58,6 +58,17 @@ function formatThermalTextWithDiscount(saleData, company, discountInfo) {
         text += `[L]  + ${m.name || m.ModifierName}\n`;
       });
     }
+
+    const comboSels = item.comboSelections || (item.ComboDetailsJSON ? (() => { try { return JSON.parse(item.ComboDetailsJSON); } catch { return []; } })() : []);
+    if (comboSels && comboSels.length > 0) {
+      comboSels.forEach((g) => {
+        text += `[L]    ${g.groupName || g.GroupName}:\n`;
+        const comboItems = g.items || g.Items || [];
+        comboItems.forEach((opt) => {
+          text += `[L]      ↳ ${opt.name || opt.Name}\n`;
+        });
+      });
+    }
   });
 
   text += "[L]================================\n";
@@ -161,11 +172,13 @@ function formatKOTThermalText(data, itemsForPrinter) {
       });
     }
 
-    if (item.comboSelections && item.comboSelections.length > 0) {
-      item.comboSelections.forEach((g) => {
-        t += `[L]    ${g.groupName}:\n`;
-        g.items?.forEach((opt) => {
-          t += `[L]      ↳ ${opt.name}\n`;
+    const comboSels = item.comboSelections || (item.ComboDetailsJSON ? (() => { try { return JSON.parse(item.ComboDetailsJSON); } catch { return []; } })() : []);
+    if (comboSels && comboSels.length > 0) {
+      comboSels.forEach((g) => {
+        t += `[L]    ${g.groupName || g.GroupName}:\n`;
+        const comboItems = g.items || g.Items || [];
+        comboItems.forEach((opt) => {
+          t += `[L]      ↳ ${opt.name || opt.Name}\n`;
         });
       });
     }
@@ -239,6 +252,7 @@ async function generateAndQueueKOTs(orderId) {
         SELECT 
           d.OrderDetailId as lineItemId, d.DishId as id, d.Quantity as qty, 
           dish.Name as name, d.Remarks as note, d.ModifiersJSON, d.isTakeAway,
+          d.ComboDetailsJSON,
           ISNULL(ckt.KitchenTypeName, cat.CategoryName) as KitchenTypeName,
           pm.PrinterName,
           pm.PrinterPath as PrinterIP
@@ -360,7 +374,7 @@ async function generateAndQueueReceipt(orderId, paymentMode = 'ONLINE') {
     const itemsRes = await pool.request()
       .input("orderNo", sql.NVarChar(50), orderId)
       .query(`
-        SELECT d.Quantity as qty, dish.Name as name, d.PricePerUnit as price, d.ModifiersJSON, d.isTakeAway
+        SELECT d.Quantity as qty, dish.Name as name, d.PricePerUnit as price, d.ModifiersJSON, d.isTakeAway, d.ComboDetailsJSON
         FROM RestaurantOrderDetailCur d 
         JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId 
         LEFT JOIN DishMaster dish ON d.DishId = dish.DishId

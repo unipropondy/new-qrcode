@@ -43,7 +43,7 @@ router.get("/dishes/all", async (req, res) => {
     const result = await pool.request().query(`
       SELECT 
         d.DishId, d.Name, d.DishGroupId, d.currentcost AS Price,
-        d.DishCode, d.Description,d.IsServiceCharge,
+        d.DishCode, d.Description,d.IsServiceCharge, ISNULL(d.IsCombo, 0) AS IsCombo,
         d.Imageid AS Image, CASE WHEN d.Imageid IS NOT NULL THEN 1 ELSE 0 END AS HasImage,
         ckt.KitchenTypeCode, ckt.KitchenTypeName, pm.PrinterPath AS PrinterIP, pm.PrinterName
       FROM DishMaster d
@@ -69,7 +69,7 @@ router.get("/dishes/group/:DishGroupId", async (req, res) => {
             d.Name,  
             d.DishGroupId, 
             currentcost AS Price,
-            d.Imageid AS Image,d.IsServiceCharge,
+            d.Imageid AS Image,d.IsServiceCharge, ISNULL(d.IsCombo, 0) AS IsCombo,
             CASE WHEN d.Imageid IS NOT NULL THEN 1 ELSE 0 END AS HasImage,
             CASE
                     WHEN EXISTS (
@@ -211,22 +211,32 @@ router.get("/company/settings", async (req, res) => {
       FROM CompanySettings
     `);
 
-    // Safely fetch Enablekotqr — only if the column exists in AppSettings
+    // Safely fetch Enablekotqr and EnableCombo — only if they exist in AppSettings
     let enableKotQr = 0;
+    let enableCombo = 0;
     try {
       const colCheck = await pool.request().query(`
-        SELECT COUNT(*) AS cnt
-        FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_NAME = 'AppSettings' AND COLUMN_NAME = 'Enablekotqr'
+        SELECT 
+          (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'AppSettings' AND COLUMN_NAME = 'Enablekotqr') AS cntKot,
+          (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'AppSettings' AND COLUMN_NAME = 'EnableCombo') AS cntCombo
       `);
-      if (colCheck.recordset[0]?.cnt > 0) {
+      let queryCols = [];
+      if (colCheck.recordset[0]?.cntKot > 0) queryCols.push("Enablekotqr");
+      if (colCheck.recordset[0]?.cntCombo > 0) queryCols.push("EnableCombo");
+      
+      if (queryCols.length > 0) {
         const appSettings = await pool.request().query(`
-          SELECT TOP 1 Enablekotqr FROM AppSettings
+          SELECT TOP 1 ${queryCols.join(", ")} FROM AppSettings
         `);
-        enableKotQr = Number(appSettings.recordset[0]?.Enablekotqr || 0);
+        if (queryCols.includes("Enablekotqr")) {
+          enableKotQr = Number(appSettings.recordset[0]?.Enablekotqr || 0);
+        }
+        if (queryCols.includes("EnableCombo")) {
+          enableCombo = Number(appSettings.recordset[0]?.EnableCombo || 0);
+        }
       }
     } catch (e) {
-      console.warn("[company/settings] Enablekotqr check failed:", e.message);
+      console.warn("[company/settings] AppSettings check failed:", e.message);
     }
 
     const data = result.recordset[0] || {
@@ -235,6 +245,7 @@ router.get("/company/settings", async (req, res) => {
     };
 
     data.Enablekotqr = enableKotQr;
+    data.EnableCombo = enableCombo;
 
     res.json(data);
 
