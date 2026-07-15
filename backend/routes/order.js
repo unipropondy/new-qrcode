@@ -187,6 +187,19 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
       item.name || item.ProductName || "Dish"
     ).substring(0, 50);
     const unitPrice = item.price || item.Cost || 0;
+
+    const actualAmount =
+      item.finalAmount ?? (unitPrice * (item.qty || 1));
+
+    const finalAmount = Math.max(
+      0,
+      actualAmount - Number(item.promoAmount || 0)
+    );
+    console.log("=================================");
+    console.log("ITEM:", JSON.stringify(item, null, 2));
+    console.log("PRICE:", unitPrice);
+    console.log("FINAL AMOUNT:", finalAmount);
+    console.log("=================================");
     const noteInfo = resolveItemNote(item);
     const takeawayInfo = resolveItemTakeaway(item);
     const modsJSON = JSON.stringify(item.modifiers || []).substring(0, 500);
@@ -207,6 +220,7 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
     // }
 
     if (!lineItemId || lineItemId.length < 10) {
+
       const matchCheck = await transaction.request()
         .input("orderId", sql.UniqueIdentifier, orderGuid)
         .input("dishId", sql.UniqueIdentifier, finalProdId)
@@ -220,6 +234,8 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
         AND StatusCode <> 0
       ORDER BY CreatedOn DESC
     `);
+      console.log("MATCH COUNT:", matchCheck.recordset.length);
+      console.log("LINE ITEM ID:", lineItemId);
 
       if (matchCheck.recordset.length > 0) {
         lineItemId = matchCheck.recordset[0].OrderDetailId;
@@ -229,8 +245,9 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
     }
 
     const comboDetailsJSON = JSON.stringify(item.comboSelections || []).substring(0, 4000);
-
+    console.log("Saving finalAmount:", finalAmount);
     const detailCheck = await transaction.request().input("detailId", sql.UniqueIdentifier, lineItemId).query("SELECT OrderDetailId,StatusCode FROM RestaurantOrderDetailCur WHERE OrderDetailId = @detailId");
+    console.log("DETAIL CHECK:", detailCheck.recordset);
     if (detailCheck.recordset.length > 0) {
       if (
         detailCheck.recordset[0].StatusCode !== 4 &&
@@ -261,7 +278,9 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
             String(noteInfo.value || "").substring(0, 100)
           )
           .input("isTakeaway", sql.Bit, takeawayInfo.value ? 1 : 0)
-          .query("UPDATE RestaurantOrderDetailCur SET Quantity = @qty, PricePerUnit = @cost, ActualAmount = @cost * @qty, TotalDetailLineAmount = @cost * @qty, StatusCode = @statusCode, Description = @dishName, DishName = @dishName, ModifiedBy = @userId, ModifiedOn = GETDATE(), ModifiersJSON = @mods, ComboDetailsJSON = @comboDetailsJSON, OrderNumber = @orderNo, Remarks = @note, isTakeAway = @isTakeaway WHERE OrderDetailId = @detailId AND StatusCode <> 4 and StatusCode <> 3 and StatusCode <> 2");
+          .input("finalAmount", sql.Decimal(18, 2), finalAmount)
+          .input("promoAmount", sql.Decimal(18, 2), Number(item.promoAmount || 0))
+          .query("UPDATE RestaurantOrderDetailCur SET Quantity = @qty, PricePerUnit = @cost,PROMO_AMOUNT = @promoAmount, ActualAmount = @finalAmount, TotalDetailLineAmount = @finalAmount, StatusCode = @statusCode, Description = @dishName, DishName = @dishName, ModifiedBy = @userId, ModifiedOn = GETDATE(), ModifiersJSON = @mods, ComboDetailsJSON = @comboDetailsJSON, OrderNumber = @orderNo, Remarks = @note, isTakeAway = @isTakeaway WHERE OrderDetailId = @detailId AND StatusCode <> 4 and StatusCode <> 3 and StatusCode <> 2");
       }
     } else {
       await transaction.request()
@@ -293,6 +312,8 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
         .input("isTakeaway", sql.Bit, takeawayInfo.value ? 1 : 0)
         .input("isProcesse", sql.Bit, 0)
         .input("isReady", sql.Bit, 0)
+        .input("finalAmount", sql.Decimal(18, 2), finalAmount)
+        .input("promoAmount", sql.Decimal(18, 2), Number(item.promoAmount || 0))
         .input("isDelivered", sql.Bit, 0)
         .query(`
   INSERT INTO RestaurantOrderDetailCur
@@ -304,6 +325,7 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
     DishName,
     Quantity,
     PricePerUnit,
+    PROMO_AMOUNT,
     ActualAmount,
     TotalDetailLineAmount,
     StatusCode,
@@ -318,7 +340,8 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
     isProcesse,
     isReady,
     isDelivered,
-    ComboDetailsJSON
+    ComboDetailsJSON,
+    start_date
   )
   VALUES
   (
@@ -329,8 +352,9 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
     @dishName,
     @qty,
     @cost,
-    @cost * @qty,
-    @cost * @qty,
+    @promoAmount,
+    @finalAmount,
+    @finalAmount,
     @statusCode,
     @userId,
     GETDATE(),
@@ -343,7 +367,8 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
     0,
     0,
     0,
-    @comboDetailsJSON
+    @comboDetailsJSON,
+    GETDATE()
   )
 `);
     }
@@ -381,7 +406,7 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
           SELECT ISNULL(SUM(ActualAmount), 0)
           FROM RestaurantOrderDetailCur
           WHERE OrderId = @orderId
-      ),
+      ) - ISNULL(DiscountAmount, 0),
       entry_Status = 'q'
   WHERE OrderId = @orderId
 `);
@@ -535,7 +560,7 @@ router.post("/save-cart", async (req, res) => {
 
 router.post("/send", async (req, res) => {
   try {
-    const { tableId, orderId, items, userId } = req.body;
+    const { tableId, orderId, items, userId, promoAmount } = req.body;
 
     console.log(
       "SYNC ITEMS:",
@@ -583,7 +608,7 @@ router.post("/send", async (req, res) => {
         finalOrderId === "#NEW" ||
         finalOrderId === "PENDING"
       ) {
-       finalOrderId = await getOrGenerateOrderId(req, cleanId);
+        finalOrderId = await getOrGenerateOrderId(req, cleanId);
       }
 
       // 2. FORCE SENT STATUS — use items from client, or fall back to DB items
@@ -604,11 +629,26 @@ router.post("/send", async (req, res) => {
               AND d.StatusCode <> 0`);
         clientItems = dbItems.recordset;
       }
-      const sentItems = clientItems.map(item => ({
+      const sentItems = clientItems.map((item, index) => ({
         ...item,
-        // status: (item.status === 'VOIDED' || item.StatusCode === 0) ? 'VOIDED' : 'SENT'
-        status: (item.status === 'VOIDED' || item.StatusCode === 0) ? 'VOIDED' : 'NEW'
+        promoAmount: index === 0 ? Number(req.body.promoAmount || 0) : 0,
+        status:
+          (item.status === "VOIDED" || item.StatusCode === 0)
+            ? "VOIDED"
+            : "NEW"
       }));
+
+      console.log("REQ PROMO:", req.body.promoAmount);
+
+console.log(
+  "SENT ITEMS:",
+  sentItems.map(x => ({
+    name: x.name,
+    promoAmount: x.promoAmount
+  }))
+);
+
+      console.log("SEND ITEMS:", JSON.stringify(sentItems, null, 2));
 
       // 3. FORCE SYNC with the new Professional ID
       await syncToProfessionalTables(
@@ -618,6 +658,8 @@ router.post("/send", async (req, res) => {
         sentItems,
         userId
       );
+
+
 
       // 4. Lock Table to the new ID
       await pool.request()
@@ -794,6 +836,7 @@ router.post("/cancel", async (req, res) => {
         .input("reason", sql.NVarChar(500), reason || "Manual Cancellation")
         .input("bizId", sql.UniqueIdentifier, header.BusinessUnitId || DEFAULT_GUID)
         .input("subTotal", sql.Money, subTotal)
+        .input("discountAmount", sql.Money, discountAmount)
         .input("voidQty", sql.Int, voidQty)
         .input("voidAmt", sql.Money, subTotal)
         .input("mobile", sql.NVarChar(50), header.MobileNo)
@@ -802,12 +845,12 @@ router.post("/cancel", async (req, res) => {
             SettlementID, LastSettlementDate, BillNo, OrderType, TableNo, Section, 
             CashierID, BusinessUnitId, SysAmount, ManualAmount, CreatedBy, CreatedOn, 
             IsCancelled, CancellationReason, CancelledDate, CancelledByUserName, 
-            SubTotal, TotalTax, DiscountAmount, MobileNo, VoidItemQty, VoidItemAmount
+            SubTotal, TotalTax, DiscountAmount, MobileNo, VoidItemQty, VoidItemAmount,start_date
           ) VALUES (
             @sid, GETDATE(), @oid, 'DINE-IN', @tableNo, @section, 
             @userId, @bizId, 0, 0, @userId, GETDATE(), 
             1, @reason, GETDATE(), @userName, 
-            @subTotal, 0, 0, @mobile, @voidQty, @voidAmt
+            @subTotal, 0, @discountAmount, @mobile, @voidQty, @voidAmt,GETDATE()
           )
         `);
 
@@ -825,10 +868,10 @@ router.post("/cancel", async (req, res) => {
           .query(`
             INSERT INTO SettlementItemDetail (
               SettlementID, DishId, DishName, Qty, Price, Status, OrderDateTime,
-              CategoryId, CategoryName, SubCategoryName
+              CategoryId, CategoryName, SubCategoryName,start_date
             ) VALUES (
               @sid, @dishId, @dishName, @qty, @price, 'VOIDED', GETDATE(),
-              @catId, @catName, @groupName
+              @catId, @catName, @groupName,GETDATE()
             )
           `);
       }
@@ -1250,7 +1293,11 @@ router.post("/payment-status", async (req, res) => {
 
 router.post("/mark-sent", async (req, res) => {
   try {
-    const { orderId } = req.body;
+    const {
+  orderId,
+  promoAmount = 0,
+  customerName
+} = req.body;
 
     const pool = await poolPromise;
 
@@ -1278,6 +1325,33 @@ router.post("/mark-sent", async (req, res) => {
           AND StatusCode <> 3
           AND StatusCode <> 2
       `);
+
+    if (promoAmount && Number(promoAmount) > 0) {
+      await pool.request()
+        .input("orderNo", sql.NVarChar(50), orderId)
+        .input("promoAmount", sql.Decimal(18, 2), Number(promoAmount))
+        .query(`
+          UPDATE RestaurantOrderCur
+          SET DiscountAmount = @promoAmount,
+              TotalAmount = TotalAmount - @promoAmount
+          WHERE OrderNumber = @orderNo
+        `);
+    }
+
+    if (
+  customerName &&
+  promoAmount &&
+  Number(promoAmount) > 0
+) {
+  await pool.request()
+    .input("name", sql.NVarChar, customerName)
+    .input("promoAmount", sql.Decimal(18,2), Number(promoAmount))
+    .query(`
+      UPDATE MemberMaster
+      SET AvailableCredit = @promoAmount
+      WHERE Name = @name
+    `);
+}
 
     console.log("Rows Updated:", result.rowsAffected);
 
@@ -1321,13 +1395,22 @@ router.post("/complete-online-payment", async (req, res) => {
   const transaction = new sql.Transaction(pool);
 
   try {
-    const { orderId, tableNo, tableId, totalAmount, cart, paymentMethod } = req.body;
+    const {
+      orderId,
+      tableNo,
+      tableId,
+      totalAmount,
+      promoAmount = 0,
+      cart,
+      paymentMethod
+    } = req.body;
 
     console.log("🔍 [PAYMENT] complete-online-payment called", {
       orderId,
       tableNo,
       tableId,
       totalAmount,
+      promoAmount,
       paymentMethod,
       cartLength: cart?.length || 0
     });
@@ -1338,6 +1421,8 @@ router.post("/complete-online-payment", async (req, res) => {
 
     const cleanTableId = tableId ? String(tableId).replace(/^\{|\}$/g, "").trim() : null;
     const amount = parseFloat(totalAmount) || 0;
+    const discountAmount = Number(promoAmount || 0);
+    const finalAmount = amount; // Frontend already subtracted promoAmount from totalAmount
     const pMethod = (paymentMethod || "ONLINE").toUpperCase();
     const settlementId = crypto.randomUUID();
 
@@ -1511,7 +1596,8 @@ router.post("/complete-online-payment", async (req, res) => {
         .input("section", sql.NVarChar(100), sectionValue)
         .input("bizId", sql.UniqueIdentifier, businessUnitId)
         .input("subTotal", sql.Money, subTotal || amount)
-        .input("sysAmount", sql.Money, amount)
+        .input("discountAmount", sql.Money, discountAmount)
+        .input("sysAmount", sql.Money, finalAmount)
         .input("mobile", sql.NVarChar(50), header?.MobileNo || null)
         .input("payMode", sql.NVarChar(50), pMethod)
         .input("userId", sql.UniqueIdentifier, DEFAULT_GUID)
@@ -1519,7 +1605,7 @@ router.post("/complete-online-payment", async (req, res) => {
                   UPDATE SettlementHeader
                   SET LastSettlementDate = GETDATE(), TableNo = @tableNo, Section = @section,
                       BusinessUnitId = @bizId, SysAmount = @sysAmount, ManualAmount = @sysAmount,
-                      SubTotal = @subTotal, MobileNo = @mobile, PayMode = @payMode
+                      SubTotal = @subTotal,DiscountAmount = @discountAmount, MobileNo = @mobile, PayMode = @payMode
                   WHERE SettlementID = @sid
               `);
       console.log(`✅ [PAYMENT] SettlementHeader updated: ${settlementId}`);
@@ -1531,7 +1617,8 @@ router.post("/complete-online-payment", async (req, res) => {
         .input("section", sql.NVarChar(100), sectionValue)
         .input("bizId", sql.UniqueIdentifier, businessUnitId)
         .input("subTotal", sql.Money, subTotal || amount)
-        .input("sysAmount", sql.Money, amount)
+        .input("discountAmount", sql.Money, discountAmount)
+        .input("sysAmount", sql.Money, finalAmount)
         .input("mobile", sql.NVarChar(50), header?.MobileNo || null)
         .input("payMode", sql.NVarChar(50), pMethod)
         .input("userId", sql.UniqueIdentifier, DEFAULT_GUID)
@@ -1540,12 +1627,12 @@ router.post("/complete-online-payment", async (req, res) => {
                       SettlementID, LastSettlementDate, BillNo, OrderType, TableNo, Section,
                       BusinessUnitId, SysAmount, ManualAmount, CreatedOn,
                       SubTotal, TotalTax, DiscountAmount, MobileNo, IsCancelled,
-                      CreatedBy
+                      CreatedBy, start_date
                   ) VALUES (
                       @sid, GETDATE(), @oid, 'DINE-IN', @tableNo, @section,
                       @bizId, @sysAmount, @sysAmount, GETDATE(),
-                      @subTotal, 0, 0, @mobile, 0,
-                      @userId
+                      @subTotal, 0, @discountAmount, @mobile, 0,
+                      @userId, GETDATE()
                   )
               `);
       console.log(`✅ [PAYMENT] SettlementHeader inserted: ${settlementId}`);
@@ -1572,10 +1659,10 @@ router.post("/complete-online-payment", async (req, res) => {
         .query(`
                     INSERT INTO SettlementItemDetail (
                         SettlementID, DishId, DishName, Qty, Price, Status, OrderDateTime,
-                        CategoryId, CategoryName, SubCategoryName
+                        CategoryId, CategoryName, SubCategoryName,start_date
                     ) VALUES (
                         @sid, @dishId, @dishName, @qty, @price, 'NORMAL', GETDATE(),
-                        @catId, @catName, @groupName
+                        @catId, @catName, @groupName, GETDATE()
                     )
                 `);
     }
@@ -1595,8 +1682,9 @@ router.post("/complete-online-payment", async (req, res) => {
       await transaction.request()
         .input("orderId", sql.UniqueIdentifier, guidOrderId)
         .input("paymode", sql.Int, paymodePosition)
-        .input("amount", sql.Decimal(18, 2), amount)
+        .input("amount", sql.Decimal(18, 2), finalAmount)
         .input("userId", sql.UniqueIdentifier, DEFAULT_GUID)
+
         .query(`
                   UPDATE PaymentDetailCur
                   SET PaymentCollectedOn = GETDATE(), Paymode = @paymode, Amount = @amount, ModifiedBy = @userId, ModifiedOn = GETDATE()
@@ -1609,18 +1697,18 @@ router.post("/complete-online-payment", async (req, res) => {
         .input("restaurantBillId", sql.UniqueIdentifier, settlementId)
         .input("orderId", sql.UniqueIdentifier, guidOrderId)
         .input("paymode", sql.Int, paymodePosition)
-        .input("amount", sql.Decimal(18, 2), amount)
+        .input("amount", sql.Decimal(18, 2), finalAmount)
         .input("bizId", sql.UniqueIdentifier, businessUnitId)
         .input("userId", sql.UniqueIdentifier, DEFAULT_GUID)
         .query(`
                   INSERT INTO PaymentDetailCur (
                       PaymentId, RestaurantBillId, OrderId, BilledFor, 
                       PaymentCollectedOn, PaymentType, Paymode, Amount,
-                      BusinessUnitId, CreatedBy, CreatedOn, ModifiedBy, ModifiedOn
+                      BusinessUnitId, CreatedBy, CreatedOn, ModifiedBy, ModifiedOn,start_date
                   ) VALUES (
                       @paymentId, @restaurantBillId, @orderId, 1,
                       GETDATE(), 1, @paymode, @amount,
-                      @bizId, @userId, GETDATE(), @userId, GETDATE()
+                      @bizId, @userId, GETDATE(), @userId, GETDATE(),GETDATE()
                   ) 
               `);
       console.log(`✅ [PAYMENT] PaymentDetailCur inserted`);
@@ -1683,12 +1771,12 @@ router.post("/complete-online-payment", async (req, res) => {
                 INSERT INTO RestaurantOrderDetail (
                     OrderDetailId, OrderId, DishId, Description, DishName, Quantity, 
                     PricePerUnit, ActualAmount, TotalDetailLineAmount, StatusCode, 
-                    CreatedBy, CreatedOn, BusinessUnitId, OrderDateTime
+                    CreatedBy, CreatedOn, BusinessUnitId, OrderDateTime,start_date
                 )
                 SELECT 
                     d.OrderDetailId, d.OrderId, d.DishId, d.Description, d.DishName, d.Quantity, 
                     d.PricePerUnit, d.ActualAmount, d.TotalDetailLineAmount, 3, 
-                    d.CreatedBy, d.CreatedOn, d.BusinessUnitId, d.OrderDateTime
+                    d.CreatedBy, d.CreatedOn, d.BusinessUnitId, d.OrderDateTime,GETDATE()
                 FROM RestaurantOrderDetailCur d
                 WHERE d.OrderId = (SELECT OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo)
                   AND NOT EXISTS (

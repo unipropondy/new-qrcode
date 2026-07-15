@@ -879,3 +879,409 @@ body {
   margin: 0;
   line-height: 1.5;
 }
+
+.logout-btn {
+  background: #ef4444;
+  color: white;
+  border: none;
+  padding: 12px 18px;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.logout-btn:hover {
+  background: #dc2626;
+}
+
+.ci-mods {
+  margin-top: 6px;
+  font-size: 15px;
+  font-weight: 500;
+  color: #6b7280;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.modifier-price {
+  color: #9e9e9e;
+  font-weight: 400;
+}
+
+button:disabled {
+  background: #d3d3d3;
+  color: #888;
+  cursor: not-allowed;
+}
+
+.promo-summary-card{
+    background:#fff;
+    border:1px solid #FFE2C5;
+    border-radius:20px;
+    padding:18px;
+    margin:16px 0;
+    box-shadow:0 8px 24px rgba(249,115,22,.12);
+}
+.promo-item{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin:12px 0;
+}
+
+.promo-label{
+    font-size:15px;
+    color:#666;
+    font-weight:600;
+}
+
+.promo-value{
+    font-size:16px;
+    color:#222;
+    font-weight:700;
+}
+
+.promo-discount{
+    color:#16a34a;
+    font-size:18px;
+    font-weight:700;
+}
+
+.promo-divider{
+    height:1px;
+    background:#ececec;
+    margin:15px 0;
+}
+
+.promo-item.total{
+    margin-top:10px;
+}
+
+.promo-item.total span:first-child{
+    font-size:17px;
+    font-weight:700;
+    color:#222;
+}
+
+.promo-total{
+    color:#f97316;
+    font-size:28px;
+    font-weight:800;
+}
+
+.payment-popup{
+    width:100%;
+    max-width:420px;
+    max-height:90vh;
+    overflow-y:auto;
+    background:#fff;
+    border-radius:28px;
+    padding:24px;
+}
+
+.promo-header{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin-bottom:18px;
+}
+
+.promo-icon{
+    width:56px;
+    height:56px;
+    border-radius:50%;
+    background:#FFF3E8;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:#f97316;
+    font-size:28px;
+}
+
+.promo-details{
+    flex:1;
+}
+
+.promo-row{
+    display:flex;
+    justify-content:space-between;
+    margin:10px 0;
+}
+
+.promo-row span:first-child{
+    color:#666;
+    font-weight:600;
+}
+
+.promo-row span:last-child{
+    font-weight:700;
+}
+
+.promo-discount{
+    color:#16a34a;
+}
+
+.promo-total{
+    margin-top:16px;
+    padding-top:16px;
+    border-top:1px solid #ececec;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+}
+
+.promo-total h2{
+    margin:0;
+    color:#f97316;
+    font-size:36px;
+}
+
+/* ============================
+   PREMIUM PAYMENT POPUP (pp-*)
+   ============================ */
+
+/* Header */
+.pp-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding-top: 6px;
+}
+
+.pp-shield-icon {
+  width: 40px;
+  height: 40px;
+  background: #fff5eb;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pp-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: #111827;
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* Brand Logos Row */
+.pp-brands-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 12px 10px;
+  background: #ffffff;
+  border: 1px solid #f0f0f0;
+  border-radius: 14px;
+  margin-bottom: 16px;
+  gap: 6px;
+}
+
+/* Divider */
+.pp-divider {
+  height: 1px;
+  background: #f3f4f6;
+  margin-bottom: 16px;
+}
+
+/* Promo Toggle Row */
+.pp-promo-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 10px;
+}
+
+.pp-promo-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  flex: 1;
+}
+
+.pp-checkbox {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  border: 2px solid #d1d5db;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  background: #fff;
+}
+
+.pp-checkbox-active {
+  background: #f97316;
+  border-color: #f97316;
+}
+
+.pp-promo-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.pp-save-badge {
+  background: #ecfdf5;
+  color: #059669;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid #a7f3d0;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Promo Detail Card */
+.pp-promo-card {
+  background: #fff9f5;
+  border: 1.5px solid #ffe2c5;
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.pp-promo-icon-col {
+  flex-shrink: 0;
+}
+
+.pp-promo-icon-circle {
+  width: 52px;
+  height: 52px;
+  background: #fff3e8;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pp-promo-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pp-promo-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pp-promo-row-label {
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+}
+
+.pp-promo-row-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f97316;
+}
+
+.pp-promo-discount {
+  font-size: 14px;
+  font-weight: 700;
+  color: #059669;
+}
+
+.pp-promo-payable-row {
+  padding-top: 8px;
+  border-top: 1px solid #ffe2c5;
+  margin-top: 2px;
+}
+
+.pp-promo-payable {
+  font-size: 18px;
+  font-weight: 800;
+  color: #f97316;
+}
+
+/* Total Amount Row */
+.pp-total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  margin-bottom: 16px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.pp-total-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.pp-total-amounts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pp-total-original {
+  font-size: 14px;
+  font-weight: 600;
+  color: #9ca3af;
+  text-decoration: line-through;
+}
+
+.pp-total-final {
+  font-size: 22px;
+  font-weight: 800;
+  color: #f97316;
+}
+
+/* Pay Online Button */
+.pp-pay-btn {
+  width: 100%;
+  padding: 12px 20px;
+  background: #f57f1f;
+  color: #ffffff;
+  border: none;
+  border-radius: 0 0 12px 12px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.2px;
+  transition: background 0.2s;
+  margin-bottom: 10px;
+}
+
+.pp-pay-btn:active {
+  background: #d96d10;
+}
+
+/* Secure Footer */
+.pp-secure-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #10b981;
+  margin-bottom: 14px;
+}

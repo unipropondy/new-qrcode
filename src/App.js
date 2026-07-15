@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 // import axios from "axios";
+import LoginPage from "./LoginPage";
 import "./App.css";
 import { BASE_URL } from "./Configs/api";
 import { QRCodeSVG } from "qrcode.react";
@@ -17,6 +18,7 @@ function App() {
   const skipSaveRef = useRef(false);
   const deleteInProgressRef = useRef(false);
   const actionRef = useRef(""); // "INSERT", "UPDATE", "DELETE"
+  const isLoggedIn = localStorage.getItem("isLoggedIn");
 
   const API = `${BASE_URL}/api`;
   const [search, setSearch] = useState("");
@@ -27,6 +29,8 @@ function App() {
   const [paymentDone, setPaymentDone] = useState(false);
   const [showCartPage, setShowCartPage] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [enableLogin, setEnableLogin] = useState(false);
 
   // Navigation states
   const [categories, setCategories] = useState([]);
@@ -41,6 +45,7 @@ function App() {
   const [currentOrderId, setCurrentOrderId] = useState(null);
 
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
+  const [applyPromo, setApplyPromo] = useState(true);
   const [showOnlinePayment, setShowOnlinePayment] = useState(false);
   const [showPayNowModal, setShowPayNowModal] = useState(false);
   const [showUpiModal, setShowUpiModal] = useState(false);
@@ -97,6 +102,23 @@ function App() {
       }
     };
     fetchQRs();
+
+    const loadAppSettings = async () => {
+      try {
+        const res = await fetch(`${API}/app-settings`);
+        const data = await res.json();
+
+        if (data.success) {
+          setEnableLogin(Number(data.enableLogin) === 1);
+        }
+      } catch (err) {
+        console.log(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAppSettings();
 
     const loadCompanySettings = async () => {
       try {
@@ -307,7 +329,7 @@ function App() {
 
   const calculateComboTotal = () => {
     if (!comboConfig) return 0;
-    
+
     let totalSurcharge = 0;
     (comboConfig.groups || []).forEach(group => {
       const selectedIds = comboSelections[group.comboGroupId] || [];
@@ -320,7 +342,7 @@ function App() {
     const chosenModifiers = comboDishModifiers
       .filter(m => selectedComboModifierIds.includes(String(m.ModifierID || m.ModifierId || "")));
     const modifierPriceTotal = chosenModifiers.reduce((sum, m) => sum + Number(m.Price || 0), 0);
-    
+
     return comboConfig.basePrice + totalSurcharge + modifierPriceTotal;
   };
 
@@ -629,6 +651,21 @@ function App() {
       0
     );
 
+    console.log("PROMO CODE:", localStorage.getItem("promoCode"));
+    console.log("PROMO AMOUNT:", localStorage.getItem("promoAmount"));
+    console.log("availableCredit:", localStorage.getItem("availableCredit"));
+    const promoCode = localStorage.getItem("promoCode");
+
+    const promoAmount =
+      promoCode && promoCode.trim() !== ""
+        ? Number(localStorage.getItem("promoAmount") || 0)
+        : 0;
+
+   const availableCredit =
+  promoCode && promoCode.trim() !== ""
+    ? Number(localStorage.getItem("availableCredit") || 0)
+    : 0;
+
     // GST Calculation
     const beforeGST = subTotal + serviceCharge;
 
@@ -636,8 +673,12 @@ function App() {
       beforeGST * (gstPercent / 100);
 
     // Final Total
+    const grandTotal = subTotal + serviceCharge;
+
     const totalAmount = (
-      subTotal + serviceCharge
+      applyPromo
+        ? grandTotal - availableCredit
+        : grandTotal
     ).toFixed(2);
 
     console.log("Subtotal:", subTotal);
@@ -729,7 +770,20 @@ function App() {
   const completeOrder = async (posOrderId, amount) => {
     try {
       console.log("[completeOrder] Using POS orderId:", posOrderId, "Amount:", amount);
+      console.log("PROMO CODE:", localStorage.getItem("promoCode"));
+      console.log("PROMO AMOUNT:", localStorage.getItem("promoAmount"));
+       console.log("availableCredit:", localStorage.getItem("availableCredit"));
+      const promoCode = localStorage.getItem("promoCode");
 
+      const promoAmount =
+        promoCode && promoCode.trim() !== ""
+          ? Number(localStorage.getItem("promoAmount") || 0)
+          : 0;
+
+      const availableCredit =
+  promoCode && promoCode.trim() !== ""
+    ? Number(localStorage.getItem("availableCredit") || 0)
+    : 0;
       // CALL UNIFIED BACKEND ROUTE
       const res = await fetch(`${API}/order/complete-online-payment`, {
         method: "POST",
@@ -742,10 +796,13 @@ function App() {
           tableId: tableId,
           totalAmount: parseFloat(amount),
           paymentMethod: "ONLINE",
+          promoAmount: applyPromo ? promoAmount : 0,
+          availableCredit: applyPromo ? availableCredit : 0,
+          applyPromo: applyPromo,
           cart: cart
         })
       });
-      
+
 
       const data = await res.json();
       console.log("UNIFIED COMPLETE PAYMENT RESPONSE:", data);
@@ -782,6 +839,21 @@ function App() {
     setIsCartLoading(true);
     try {
 
+      console.log("PROMO CODE:", localStorage.getItem("promoCode"));
+      console.log("PROMO AMOUNT:", localStorage.getItem("promoAmount"));
+       console.log("availableCredit:", localStorage.getItem("availableCredit"));
+      const promoCode = localStorage.getItem("promoCode");
+
+      const promoAmount =
+        promoCode && promoCode.trim() !== ""
+          ? Number(localStorage.getItem("promoAmount") || 0)
+          : 0;
+
+         const availableCredit =
+  promoCode && promoCode.trim() !== ""
+    ? Number(localStorage.getItem("availableCredit") || 0)
+    : 0;
+
       const payload = {
 
         tableId: tableId,
@@ -789,6 +861,10 @@ function App() {
         orderId: currentOrderId,
 
         userId: "00000000-0000-0000-0000-000000000000",
+
+        promoAmount: promoAmount,
+
+        availableCredit: availableCredit,
 
         items: cart.map((item) => ({
 
@@ -800,13 +876,15 @@ function App() {
 
           price: item.Price || item.price || 0,
 
+          finalAmount: (item.Price || item.price || 0) * (item.qty || 1),
+
           modifiers: (item.selectedMods || []).filter(
             (m) =>
               /^[0-9a-fA-F-]{36}$/.test(m.ModifierID)
           ),
 
-           comboSelections: item.comboSelections || [],
-  lineItemId: item.lineItemId || item.OrderDetailId || null,
+          comboSelections: item.comboSelections || [],
+          lineItemId: item.lineItemId || item.OrderDetailId || null,
 
           note: item.note || "",
 
@@ -891,8 +969,25 @@ function App() {
   };
 
   const placeOrder = async () => {
+    //  setShowOnlinePayment(false); 
     setIsCartLoading(true);
     try {
+
+      console.log("PROMO CODE:", localStorage.getItem("promoCode"));
+      console.log("PROMO AMOUNT:", localStorage.getItem("promoAmount"));
+       console.log("availableCredit:", localStorage.getItem("availableCredit"));
+
+      const promoCode = localStorage.getItem("promoCode");
+
+      const promoAmount =
+        promoCode && promoCode.trim() !== ""
+          ? Number(localStorage.getItem("promoAmount") || 0)
+          : 0;
+
+     const availableCredit =
+  promoCode && promoCode.trim() !== ""
+    ? Number(localStorage.getItem("availableCredit") || 0)
+    : 0;
 
       const payload = {
 
@@ -901,6 +996,10 @@ function App() {
         orderId: currentOrderId,
 
         userId: "00000000-0000-0000-0000-000000000000",
+
+        promoAmount: promoAmount,
+
+        availableCredit: availableCredit,
 
         items: cart.map((item) => ({
 
@@ -911,6 +1010,7 @@ function App() {
           qty: item.qty || 1,
 
           price: item.Price || item.price || 0,
+          finalAmount: (item.Price || item.price || 0) * (item.qty || 1),
 
           modifiers: (item.selectedMods || [])
             .filter((m) =>
@@ -923,8 +1023,8 @@ function App() {
               qty: 1,
             })),
 
-             comboSelections: item.comboSelections || [],
-  lineItemId: item.lineItemId || item.OrderDetailId || null,
+          comboSelections: item.comboSelections || [],
+          lineItemId: item.lineItemId || item.OrderDetailId || null,
 
           note: item.note || "",
 
@@ -932,6 +1032,7 @@ function App() {
         })),
       };
 
+      console.log("SEND PAYLOAD", JSON.stringify(payload, null, 2));
       const res = await fetch(`${API}/order/send`, {
 
         method: "POST",
@@ -948,10 +1049,53 @@ function App() {
       console.log("ORDER SEND:", data);
 
       if (data.success) {
-        if (data.orderId) { setCurrentOrderId(data.orderId); }
 
-        const totalAmount =
-          cart.reduce((s, i) => s + (Number(i.Price || i.price || 0) * Number(i.qty || 1)), 0).toFixed(2);
+        if (data.orderId) {
+          setCurrentOrderId(data.orderId);
+        }
+
+        console.log("PROMO CODE:", localStorage.getItem("promoCode"));
+        console.log("PROMO AMOUNT:", localStorage.getItem("promoAmount"));
+         console.log("availableCredit:", localStorage.getItem("availableCredit"));
+
+        const promoCode = localStorage.getItem("promoCode");
+
+        const promoAmount =
+          promoCode && promoCode.trim() !== ""
+            ? Number(localStorage.getItem("promoAmount") || 0)
+            : 0;
+
+     const availableCredit =
+  promoCode && promoCode.trim() !== ""
+    ? Number(localStorage.getItem("availableCredit") || 0)
+    : 0;
+
+        const subTotal = cart.reduce(
+          (s, i) =>
+            s + (Number(i.Price || i.price || 0) * Number(i.qty || 1)),
+          0
+        );
+
+        const eligibleAmount = cart.reduce(
+          (sum, item) =>
+            item.IsServiceCharge
+              ? sum +
+              Number(item.Price || item.price || 0) *
+              Number(item.qty || 1)
+              : sum,
+          0
+        );
+
+        const serviceCharge =
+          eligibleAmount * (serviceChargePercent / 100);
+
+        const totalAmount = Math.max(
+          0,
+          subTotal +
+          serviceCharge -
+          (applyPromo ? availableCredit : 0)
+        ).toFixed(2);
+
         setShowPaymentPopup(true);
       }
       else {
@@ -996,11 +1140,11 @@ function App() {
           selectedMods:
             item.modifiers || [],
 
-             comboSelections:
-    item.comboSelections ||
-    (item.ComboDetailsJSON
-      ? JSON.parse(item.ComboDetailsJSON)
-      : []),
+          comboSelections:
+            item.comboSelections ||
+            (item.ComboDetailsJSON
+              ? JSON.parse(item.ComboDetailsJSON)
+              : []),
         }));
 
         skipSaveRef.current = true;
@@ -1058,14 +1202,30 @@ function App() {
       selectedModifierIds.includes(m.ModifierID)
     );
 
-    const extra = selectedMods.reduce(
-      (sum, m) => sum + Number(m.Price || 0),
-      0
-    );
+    const extra = selectedMods.reduce((sum, m) => {
+
+      if (
+        Number(m.isPriceAffect) === 1 &&
+        Number(m.isDishPrice) === 1 &&
+        m.DishCost !== null
+      ) {
+        return sum + Number(m.DishCost || 0);
+      }
+
+      return sum + Number(m.Price || 0);
+
+    }, 0);
 
     const finalPrice =
-      Number(selectedDish.Price || 0) +
-      Number(extra);
+      Number(selectedDish.Price || 0) + extra;
+
+    console.log("Selected Mods:", selectedMods);
+    console.log("Extra:", extra);
+    console.log("Final Price:", finalPrice);
+
+    // const finalPrice =
+    //   Number(selectedDish.Price || 0) +
+    //   Number(extra);
 
     setCart((prev) => {
 
@@ -1084,7 +1244,9 @@ function App() {
             .sort()
         );
 
-
+        console.log("showOnlinePayment =", showOnlinePayment);
+        console.log("promoAmount =", promoAmount);
+        console.log("totalAmount =", totalAmount);
 
         return (
           item.DishId === selectedDish.DishId &&
@@ -1121,7 +1283,9 @@ function App() {
 
           selectedMods,
 
-          finalPrice,
+          Price: finalPrice,      // ⭐ Add this
+          price: finalPrice,      // ⭐ Add this
+          finalPrice: finalPrice, // Keep this
 
           modifierKey: selectedMods
             .map((m) => m.ModifierID)
@@ -1308,9 +1472,43 @@ function App() {
   const gstAmount =
     beforeGST * (gstPercent / 100);
 
-  const totalAmount = (
-    subTotal + serviceCharge
+  // Promo Amount
+  console.log("PROMO CODE:", localStorage.getItem("promoCode"));
+  console.log("PROMO AMOUNT:", localStorage.getItem("promoAmount"));
+   console.log("availableCredit:", localStorage.getItem("availableCredit"));
+  const promoCode = localStorage.getItem("promoCode");
+
+  const promoAmount =
+    promoCode && promoCode.trim() !== ""
+      ? Number(localStorage.getItem("promoAmount") || 0)
+      : 0;
+
+     const availableCredit =
+  promoCode && promoCode.trim() !== ""
+    ? Number(localStorage.getItem("availableCredit") || 0)
+    : 0;
+
+  // Final Total
+  const totalAmount = Math.max(
+    0,
+    subTotal +
+    serviceCharge -
+    (applyPromo ? availableCredit : 0)
   ).toFixed(2);
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  if (enableLogin && !isLoggedIn) {
+    return (
+      <LoginPage
+        onLoginSuccess={() => {
+          window.location.reload();
+        }}
+      />
+    );
+  }
 
   return (
 
@@ -1363,6 +1561,7 @@ function App() {
                     <button onClick={() => { setIsSearchOpen(false); setSearch(""); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888' }}>✖</button>
                   </div>
                 )}
+
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                   <button
                     className={`status-btn ${cart.length > 0 ? 'blink-anim' : ''}`}
@@ -1379,12 +1578,30 @@ function App() {
 
                   <button
                     className="status-btn"
+                    disabled={!currentOrderId}
                     onClick={() =>
                       window.location.href =
                       `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${currentOrderId}`
                     }
                   >
                     🟢 Order Status
+                  </button>
+
+                  <button
+                    className="logout-btn"
+                    onClick={() => {
+                      localStorage.removeItem("isLoggedIn");
+                      localStorage.removeItem("qr_pos_user");
+
+                      // Clear promo details
+                      localStorage.removeItem("promoCode");
+                      localStorage.removeItem("promoAmount");
+                      localStorage.removeItem("memberId");
+
+                      window.location.reload();
+                    }}
+                  >
+                    🚪 Logout
                   </button>
                 </div>
               </div>
@@ -1530,49 +1747,58 @@ function App() {
 
                               <div className="ci-info">
 
-                               <div className="ci-name">
+                                <div className="ci-name">
 
-  <div className="ci-title">
-    {item.Name || item.name}
-  </div>
+                                  <div className="ci-title">
+                                    {item.Name || item.name}
+                                  </div>
 
-  {item.selectedMods?.length > 0 && (
-    <div className="ci-mods">
-      {item.selectedMods
-        .map((m) => m.ModifierName)
-        .join(", ")}
-    </div>
-  )}
+                                  {item.selectedMods?.length > 0 && (
+                                    <div className="ci-mods">
+                                      {item.selectedMods.map((m, index) => (
+                                        <span key={`${m.ModifierID}-${index}`}>
+                                          {m.ModifierName}
+                                          {(Number(m.Price || m.DishCost || 0) > 0) && (
+                                            <span className="modifier-price">
+                                              {" "}
+                                              (+${Number(m.Price || m.DishCost || 0).toFixed(2)})
+                                            </span>
+                                          )}
+                                          {index < item.selectedMods.length - 1 ? ", " : ""}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
 
-  {item.comboSelections?.length > 0 && (
-    <div className="ci-mods">
-      {item.comboSelections.map((group, index) => (
-        <div key={index} style={{ marginTop: "4px" }}>
-          <div style={{ color: "#f97316", fontWeight: "600" }}>
-            {group.groupName}:
-          </div>
+                                  {item.comboSelections?.length > 0 && (
+                                    <div className="ci-mods">
+                                      {item.comboSelections.map((group, index) => (
+                                        <div key={index} style={{ marginTop: "4px" }}>
+                                          <div style={{ color: "#f97316", fontWeight: "600" }}>
+                                            {group.groupName}:
+                                          </div>
 
-          {group.items?.map((option, idx) => (
-            <div
-              key={idx}
-              style={{
-                marginLeft: "12px",
-                color: "#666",
-                fontSize: "13px",
-              }}
-            >
-              ↳ {option.name}
-              {((option.surcharge || 0) + (option.dishPrice || 0)) > 0 && (
-                <> (+${((option.surcharge || 0) + (option.dishPrice || 0)).toFixed(2)})</>
-              )}
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  )}
+                                          {group.items?.map((option, idx) => (
+                                            <div
+                                              key={idx}
+                                              style={{
+                                                marginLeft: "12px",
+                                                color: "#666",
+                                                fontSize: "13px",
+                                              }}
+                                            >
+                                              ↳ {option.name}
+                                              {((option.surcharge || 0) + (option.dishPrice || 0)) > 0 && (
+                                                <> (+${((option.surcharge || 0) + (option.dishPrice || 0)).toFixed(2)})</>
+                                              )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
 
-</div>
+                                </div>
 
                                 <div className="qty-controls">
 
@@ -1650,8 +1876,8 @@ function App() {
                         <div className="cart-footer">
 
                           <div className="cart-total-row">
-                            <span>Subtotal</span>
-                            <span>${subTotal.toFixed(2)}</span>
+                            <span style={{ color: '#000', fontSize: '16px', fontWeight: 'bold' }}>Subtotal</span>
+                            <span style={{ color: '#000', fontSize: '16px', fontWeight: 'bold' }}>${subTotal.toFixed(2)}</span>
                           </div>
 
                           {serviceCharge > 0 && (
@@ -1668,10 +1894,84 @@ function App() {
                             </div>
                           )}
 
-                          <div className="cart-total-row">
-                            <strong>Total</strong>
-                            <strong>${totalAmount}</strong>
+                          {/* Promo Toggle Row */}
+                          <div className="pp-promo-toggle-row">
+                            <label className="pp-promo-toggle-label">
+                              <div
+                                className={`pp-checkbox ${applyPromo ? 'pp-checkbox-active' : ''}`}
+                                onClick={() => setApplyPromo(!applyPromo)}
+                              >
+                                {applyPromo && (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                )}
+                              </div>
+                              <span className="pp-promo-text">Apply Reward points</span>
+                            </label>
+                            {applyPromo && availableCredit > 0 && (
+                              <span className="pp-save-badge">Save ${availableCredit.toFixed(2)}</span>
+                            )}
+                            {applyPromo && availableCredit === 0 && (
+                              <span className="pp-save-badge" style={{ background: '#fff7ed', color: '#f97316', border: '1px solid #fed7aa' }}>Promo Applied</span>
+                            )}
                           </div>
+
+                          {/* Promo Detail Card */}
+                          {applyPromo && (
+                            <div className="pp-promo-card">
+                              <div className="pp-promo-icon-col">
+                                <div className="pp-promo-icon-circle">
+                                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                                    <line x1="7" y1="7" x2="7.01" y2="7" />
+                                  </svg>
+                                </div>
+                              </div>
+                              <div className="pp-promo-details">
+                                {/* <div className="pp-promo-row">
+                                  <span className="pp-promo-row-label">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '5px', verticalAlign: 'middle' }}>
+                                      <polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                                    </svg>
+                                    Reward points Code
+                                  </span>
+                                  <span className="pp-promo-row-value">{promoCode}</span>
+                                </div> */}
+                                <div className="pp-promo-row">
+                                  <span className="pp-promo-row-label">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '5px', verticalAlign: 'middle' }}>
+                                      <line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" />
+                                    </svg>
+                                    Reward points
+                                  </span>
+                                  <span className="pp-promo-discount">- ${availableCredit.toFixed(2)}</span>
+                                </div>
+                                <div className="pp-promo-row pp-promo-payable-row">
+                                  <span className="pp-promo-row-label">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '5px', verticalAlign: 'middle' }}>
+                                      <rect x="2" y="7" width="20" height="14" rx="2" ry="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+                                    </svg>
+                                    <strong>Amount Payable</strong>
+                                  </span>
+                                  <span className="pp-promo-payable">${(subTotal + serviceCharge - availableCredit).toFixed(2)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="cart-total-row">
+                            <strong style={{ color: '#000', fontSize: '16px', fontWeight: 'bold' }}>Total</strong>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              {applyPromo && availableCredit > 0 && (
+                                <span className="pp-total-original" style={{ fontSize: '14px' }}>
+                                  ${(subTotal + serviceCharge).toFixed(2)}
+                                </span>
+                              )}
+                              <strong style={{ color: '#000', fontSize: '16px', fontWeight: 'bold' }}>${totalAmount}</strong>
+                            </div>
+                          </div>
+
 
                           <button
                             className="checkout-btn"
@@ -1925,84 +2225,55 @@ function App() {
               )}
               {showPaymentPopup && (
                 <div className="modal-overlay">
-
                   <div className="payment-popup">
 
+                    {/* Close Button */}
                     <button
                       className="payment-close"
                       onClick={() => setShowPaymentPopup(false)}
                     >
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     </button>
 
+                    {/* Header - 1st image style */}
                     <div className="payment-dot"></div>
 
                     <div className="payment-icon-outer">
                       <div className="payment-icon-inner">?</div>
                     </div>
 
-                    <h2 className="payment-title">
-                      How would you like to pay ?
-                    </h2>
+                    <h2 className="payment-title">How would you like to pay ?</h2>
+                    <p className="payment-subtitle">These are the available payment methods</p>
 
-                    <p className="payment-subtitle">
-                      These are the available payment methods
-                    </p>
-
-                    <div className="payment-card">
-
+                    {/* Pay Online Card */}
+                    <div className="payment-card" style={{ marginBottom: '20px' }}>
                       <div className="card-top-section card-1-top">
-                        {/* <div className="qlub-branding">
-                  <span className="pb-text">Powered By</span>
-                  <span className="qlub-logo">qlub <span className="qlub-dots">::</span></span>
-                </div> */}
-                        <div className="brand-grid">
+                        <div className="brand-grid full-grid">
+                          <CashBrand />
                           <VoucherBrand />
                           <MastercardBrand />
                           <NetsBrand />
                           <PayNowBrand />
                           <VisaBrand />
-                          {/* <GPayBrand />
-                  <MastercardBrand />
-                  <UnionPayBrand />
-                  <ApplePayBrand />
-                  <VisaBrand />
-                  <AmexBrand /> */}
                         </div>
                       </div>
-
-                      { /*<button
-                        className="payment-btn"
-                        onClick={() => {
-                          setShowPaymentPopup(false);
-                          alert("Currently Not Available");
-                        }}
-                      >
-                        Pay Online
-                      </button>*/}
-
                       <button
-                        className="payment-btn"
+                        className="pp-pay-btn"
                         onClick={() => {
                           setShowPaymentPopup(false);
-                          // completeOrder() (called on YeahPay success) handles:
-                          // 1. StatusCode = 2 in RestaurantOrderDetailCur
-                          // 2. Insert SettlementHeader
-                          // 3. Insert SettlementItemDetail
                           handlePayOnline();
                         }}
                       >
                         Pay Online
                       </button>
-
                     </div>
 
-                    <div className="payment-or">
-                      OR
-                    </div>
 
+
+                    <div className="payment-or">OR</div>
+
+                    {/* Pay At Cashier Card */}
                     <div className="payment-card">
-
                       <div className="card-top-section card-2-top">
                         <div className="brand-grid full-grid">
                           <CashBrand />
@@ -2013,46 +2284,50 @@ function App() {
                           <VisaBrand />
                         </div>
                       </div>
-
                       <button
                         className="payment-btn"
                         onClick={async () => {
                           try {
+                            console.log("PROMO CODE:", localStorage.getItem("promoCode"));
+                            console.log("PROMO AMOUNT:", localStorage.getItem("promoAmount"));
+                             console.log("availableCredit:", localStorage.getItem("availableCredit"));
+                            console.log("AVAILABLE CREDIT:", localStorage.getItem("availableCredit"));
+                            const promoCode = localStorage.getItem("promoCode");
+                            const promoAmount =
+                              promoCode && promoCode.trim() !== ""
+                                ? Number(localStorage.getItem("promoAmount") || 0)
+                                : 0;
+
+                             const availableCredit =
+  promoCode && promoCode.trim() !== ""
+    ? Number(localStorage.getItem("availableCredit") || 0)
+    : 0;
+                            const user = JSON.parse(localStorage.getItem("qr_pos_user") || "{}");
                             await fetch(`${API}/order/mark-sent`, {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ orderId: currentOrderId/*, statusCode: 1 */ })
+                              body: JSON.stringify({ orderId: currentOrderId, promoAmount: promoAmount, availableCredit: availableCredit, customerName: user.UserName })
                             });
-
                             await fetch(`${API}/order/payment-status`, {
                               method: "POST",
-                              headers: {
-                                "Content-Type": "application/json"
-                              },
-                              body: JSON.stringify({
-                                tableId: tableId,
-                                paymentStatus: 0
-                              })
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ tableId: tableId, paymentStatus: 0 })
                             });
                             // KOT Printing is now handled by the backend
-
                           } catch (e) {
                             console.error(e);
                           }
+                          setShowOnlinePayment(false);
                           setShowPaymentPopup(false);
-
                           window.location.href =
                             `/settlement-success?tableId=${tableId}&table=${tableNo}&orderId=${currentOrderId}`;
-
                         }}
                       >
                         Pay At Cashier Now
                       </button>
-
                     </div>
 
                   </div>
-
                 </div>
               )}
 
@@ -2082,29 +2357,29 @@ function App() {
                       <div style={{ width: '48px' }}></div>
                     </div>
 
-                    <div style={{ flex: 1, display: 'flex', gap: '20px', padding: '20px', overflowY: 'auto', flexWrap: 'wrap', alignContent: 'flex-start' }}>
-                      {/* Left Side: Payment Method */}
-                      <div style={{ flex: '1 1 300px', background: 'white', borderRadius: '20px', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                        <h3 style={{ margin: '0', textTransform: 'uppercase', fontSize: '12px', color: '#666', letterSpacing: '0.5px' }}>Select Payment Method</h3>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '10px' }}>
-                          {/* <div style={{ padding: '20px 10px', border: '2px solid #f97316', borderRadius: '12px', textAlign: 'center', background: '#fff5eb', color: '#f97316', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+                    {/* <div style={{ flex: 1, display: 'flex', gap: '20px', padding: '20px', overflowY: 'auto', flexWrap: 'wrap', alignContent: 'flex-start' }}> */}
+                    {/* Left Side: Payment Method */}
+                    <div style={{ flex: '1 1 300px', background: 'white', borderRadius: '20px', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      {/* <h3 style={{ margin: '0', textTransform: 'uppercase', fontSize: '12px', color: '#666', letterSpacing: '0.5px' }}>Select Payment Method</h3> */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '10px' }}>
+                        {/* <div style={{ padding: '20px 10px', border: '2px solid #f97316', borderRadius: '12px', textAlign: 'center', background: '#fff5eb', color: '#f97316', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
                 <MastercardBrand /> <span style={{ fontSize: '12px' }}>Credit Card</span>
               </div> */}
-                          <div
+                        {/* <div
                             style={{ padding: '20px 10px', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', color: '#666', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
                             onClick={() => setShowPayNowModal(true)}
                           >
                             <PayNowBrand /> <span style={{ fontSize: '12px' }}>PayNow</span>
-                          </div>
-                          {/* <div
+                          </div> */}
+                        {/* <div
                     style={{ padding: '20px 10px', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', color: '#666', fontWeight: 'bold', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
                     onClick={() => setShowUpiModal(true)}
                   >
                     <GPayBrand /> <span style={{ fontSize: '12px' }}>GPay / UPI</span>
                   </div> */}
-                        </div>
+                        {/* </div> */}
 
-                        <div style={{ flex: 1 }}></div>
+                        {/* <div style={{ flex: 1 }}></div> */}
 
                         {/* <button
                   className="checkout-btn"
@@ -2198,14 +2473,14 @@ function App() {
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                   Complete Settlement
                 </button>*/}
-                        <button
+                        {/* <button
                           className="checkout-btn"
                           style={{ height: '56px', fontSize: '18px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '20px' }}
                           onClick={handlePayOnline}
                         >
                           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                           Complete Settlement
-                        </button>
+                        </button> */}
                       </div>
 
                       {/* Right Side: Summary */}
@@ -2213,15 +2488,35 @@ function App() {
                         <div style={{ background: 'white', borderRadius: '20px', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', alignItems: 'center' }}>
                             <span style={{ color: '#666', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.5px' }}>Amount Due</span>
-                            <span style={{ fontSize: '28px', fontWeight: '900', color: '#f97316' }}>${totalAmount}</span>
+                            <span style={{ fontSize: '28px', fontWeight: '900', color: '#f97316' }}>${Number(subTotal).toFixed(2)}</span>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px' }}>
                             <span style={{ color: '#666', fontWeight: '600' }}>Subtotal</span>
-                            <span style={{ fontWeight: 'bold', color: '#1f2937' }}>${totalAmount}</span>
+                            <span style={{ fontWeight: 'bold', color: '#1f2937' }}>${Number(subTotal).toFixed(2)}</span>
                           </div>
+                          {availableCredit > 0 && (
+                            <div style={{ display: "flex", justifyContent: "space-between", marginTop: "10px", color: "#16a34a" }}>
+                              <span>Promo Discount</span>
+                              <span>- ${Number(availableCredit).toFixed(2)}</span>
+                            </div>
+                          )}
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                             <span style={{ color: '#666', fontWeight: '600' }}>GST</span>
                             <span style={{ fontWeight: 'bold', color: '#1f2937' }}>$0.00</span>
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              marginTop: "15px",
+                              fontWeight: "bold",
+                              fontSize: "18px",
+                              borderTop: "1px solid #eee",
+                              paddingTop: "10px",
+                            }}
+                          >
+                            <span>Total</span>
+                            <span>${totalAmount}</span>
                           </div>
                         </div>
 
@@ -2233,8 +2528,19 @@ function App() {
                               <div style={{ flex: 1, fontWeight: '600', color: '#1f2937', fontSize: '13px' }}>
                                 {item.Name || item.name}
                                 {item.selectedMods?.length > 0 && (
-                                  <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                                    {item.selectedMods.map((m) => m.ModifierName).join(", ")}
+                                  <div className="ci-mods">
+                                    {item.selectedMods.map((m, index) => (
+                                      <span key={m.ModifierID}>
+                                        {m.ModifierName}
+                                        {Number(m.Price || m.DishCost || 0) > 0 && (
+                                          <span className="modifier-price">
+                                            {" "}
+                                            (+${Number(m.Price || m.DishCost).toFixed(2)})
+                                          </span>
+                                        )}
+                                        {index < item.selectedMods.length - 1 ? ", " : ""}
+                                      </span>
+                                    ))}
                                   </div>
                                 )}
                               </div>

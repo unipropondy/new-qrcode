@@ -120,10 +120,20 @@ router.get("/modifiers/:dishId", async (req, res) => {
     const pool = await poolPromise;
     const result = await pool.request().input("dishId", req.params.dishId)
       .query(`
-        SELECT dm.DishId, dm.ModifierId AS ModifierID, m.ModifierCode, m.ModifierName, 0 AS Price
-        FROM DishModifier dm 
-        INNER JOIN ModifierMaster m ON dm.ModifierId = m.ModifierId
-        WHERE dm.DishId = @dishId ORDER BY m.ModifierName ASC
+       SELECT
+          dm.DishId,
+          dm.ModifierId AS ModifierID,
+          m.ModifierCode,
+          m.ModifierName,
+          ISNULL(m.DishCost, 0) AS Price,
+          ISNULL(m.DishCost, 0) AS DishCost,
+          ISNULL(m.isPriceAffect, 0) AS isPriceAffect,
+          ISNULL(m.isDishPrice, 0) AS isDishPrice
+          FROM DishModifier dm
+          INNER JOIN ModifierMaster m
+              ON dm.ModifierId = m.ModifierId
+          WHERE dm.DishId = @dishId
+          ORDER BY m.ModifierName ASC;
       `);
     res.json(result.recordset);
   } catch (err) {
@@ -321,6 +331,27 @@ router.post("/paymodes/update-qr", async (req, res) => {
     console.error("UPDATE QR ERROR:", err);
 
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/app-settings", async (req, res) => {
+  try {
+    const pool = await poolPromise;
+
+    const result = await pool.request().query(`
+      SELECT TOP 1 enablelogin AS EnableLogin
+      FROM AppSettings
+    `);
+
+    res.json({
+      success: true,
+      enableLogin: Number(result.recordset[0]?.EnableLogin || 0)
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message
+    });
   }
 });
 

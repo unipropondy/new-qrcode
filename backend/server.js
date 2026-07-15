@@ -40,6 +40,9 @@ app.use("/api/print-jobs", printJobsRoutes);
 const comboRoutes = require("./routes/combo");
 app.use("/api/combo", comboRoutes);
 
+const authRoutes = require("./routes/auth");
+app.use("/api/auth", authRoutes);
+
 app.get("/", (req, res) => {
   res.send("POS Backend Running");
 });
