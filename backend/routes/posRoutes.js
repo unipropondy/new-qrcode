@@ -339,14 +339,18 @@ router.get("/app-settings", async (req, res) => {
     const pool = await poolPromise;
 
     const result = await pool.request().query(`
-      SELECT TOP 1 enablelogin AS EnableLogin
+      SELECT TOP 1
+        EnableLogin,
+        ShowPromoCode
       FROM AppSettings
     `);
 
     res.json({
       success: true,
-      enableLogin: Number(result.recordset[0]?.EnableLogin || 0)
+      enableLogin: Number(result.recordset[0]?.EnableLogin || 0),
+      showPromoCode: Number(result.recordset[0]?.ShowPromoCode || 0)
     });
+
   } catch (err) {
     res.status(500).json({
       success: false,

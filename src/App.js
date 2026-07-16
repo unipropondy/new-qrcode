@@ -45,12 +45,13 @@ function App() {
   const [currentOrderId, setCurrentOrderId] = useState(null);
 
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
-  const [applyPromo, setApplyPromo] = useState(true);
+  const [applyPromo, setApplyPromo] = useState(false);
   const [showOnlinePayment, setShowOnlinePayment] = useState(false);
   const [showPayNowModal, setShowPayNowModal] = useState(false);
   const [showUpiModal, setShowUpiModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [enableKotQr, setEnableKotQr] = useState(0);
+  const [showPromoCode, setShowPromoCode] = useState(false);
   const [enableCombo, setEnableCombo] = useState(0);
   const [showComboCustomizer, setShowComboCustomizer] = useState(false);
   const [comboConfig, setComboConfig] = useState(null);
@@ -108,8 +109,12 @@ function App() {
         const res = await fetch(`${API}/app-settings`);
         const data = await res.json();
 
+          console.log("App Settings:", data);
         if (data.success) {
           setEnableLogin(Number(data.enableLogin) === 1);
+          setShowPromoCode(Number(data.showPromoCode) === 1);
+
+          console.log("ShowPromoCode State:", Number(data.showPromoCode) === 1);
         }
       } catch (err) {
         console.log(err);
@@ -1895,27 +1900,52 @@ function App() {
                           )}
 
                           {/* Promo Toggle Row */}
-                          <div className="pp-promo-toggle-row">
-                            <label className="pp-promo-toggle-label">
-                              <div
-                                className={`pp-checkbox ${applyPromo ? 'pp-checkbox-active' : ''}`}
-                                onClick={() => setApplyPromo(!applyPromo)}
-                              >
-                                {applyPromo && (
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <polyline points="20 6 9 17 4 12" />
-                                  </svg>
-                                )}
-                              </div>
-                              <span className="pp-promo-text">Apply Reward points</span>
-                            </label>
-                            {applyPromo && availableCredit > 0 && (
-                              <span className="pp-save-badge">Save ${availableCredit.toFixed(2)}</span>
-                            )}
-                            {applyPromo && availableCredit === 0 && (
-                              <span className="pp-save-badge" style={{ background: '#fff7ed', color: '#f97316', border: '1px solid #fed7aa' }}>Promo Applied</span>
-                            )}
-                          </div>
+                          {showPromoCode && (
+                            <div className="pp-promo-toggle-row">
+                              <label className="pp-promo-toggle-label">
+                                <div
+                                  className={`pp-checkbox ${applyPromo ? "pp-checkbox-active" : ""}`}
+                                  onClick={() => setApplyPromo(!applyPromo)}
+                                >
+                                  {applyPromo && (
+                                    <svg
+                                      width="12"
+                                      height="12"
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      stroke="white"
+                                      strokeWidth="3.5"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    >
+                                      <polyline points="20 6 9 17 4 12" />
+                                    </svg>
+                                  )}
+                                </div>
+
+                                <span className="pp-promo-text">Apply Promo Code</span>
+                              </label>
+
+                              {applyPromo && availableCredit > 0 && (
+                                <span className="pp-save-badge">
+                                  Save ${availableCredit.toFixed(2)}
+                                </span>
+                              )}
+
+                              {applyPromo && availableCredit === 0 && (
+                                <span
+                                  className="pp-save-badge"
+                                  style={{
+                                    background: "#fff7ed",
+                                    color: "#f97316",
+                                    border: "1px solid #fed7aa",
+                                  }}
+                                >
+                                  Promo Applied
+                                </span>
+                              )}
+                            </div>
+                          )}
 
                           {/* Promo Detail Card */}
                           {applyPromo && (
@@ -1943,7 +1973,7 @@ function App() {
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '5px', verticalAlign: 'middle' }}>
                                       <line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" />
                                     </svg>
-                                    Reward points
+                                    Promo Code
                                   </span>
                                   <span className="pp-promo-discount">- ${availableCredit.toFixed(2)}</span>
                                 </div>
