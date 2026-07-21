@@ -180,6 +180,8 @@ function App() {
     }
 
     saveCartToBackend();
+    console.log("SAVE CART CALLED");
+console.log("CART BEFORE SAVE:", cart);
 
   }, [cart, paymentDone]);
 
@@ -478,50 +480,52 @@ function App() {
     }
   };
   const addToCartSimple = async (dish) => {
-    actionRef.current = "INSERT";
-    setCart((prev) => {
+     console.log("🔥 ADD CLICK:", dish.Name);
+  actionRef.current = "INSERT";
 
-      // const existing = prev.find(
-      //   (item) =>
-      //     (item.DishId || item.id) === dish.DishId
-      // );
+  console.log("ADD CLICK:", dish.Name);
 
-      const existing = prev.find(
-        (item) =>
-          (item.DishId || item.id) === dish.DishId &&
-          item.status !== "SENT"
-      );
-      // already exists
-      if (existing) {
-        return prev.map((item) =>
-          (item.DishId || item.id) === dish.DishId
-            ? {
+  setCart((prev) => {
+    console.log("PREV CART:", prev);
+
+    const existing = prev.find(
+      (item) =>
+        (item.DishId || item.id) === dish.DishId
+    );
+
+    if (existing) {
+      const updated = prev.map((item) =>
+        (item.DishId || item.id) === dish.DishId
+          ? {
               ...item,
               qty: (item.qty || 1) + 1,
               status: "NEW",
             }
-            : item
-        );
-      }
+          : item
+      );
 
-      // new item
-      return [
-        ...prev,
-        {
-          ...dish,
-          cartId: crypto.randomUUID(),
+      console.log("UPDATED CART:", updated);
 
-          qty: 1,
+      return updated;
+    }
 
-          selectedMods: [],
+    const newCart = [
+      ...prev,
+      {
+        ...dish,
+        cartId: crypto.randomUUID(),
+        qty: 1,
+        selectedMods: [],
+        finalPrice: Number(dish.Price || 0),
+        status: "NEW",
+      },
+    ];
 
-          finalPrice: Number(dish.Price || 0),
-          status: "NEW",
-        }
-      ];
-    });
+    console.log("NEW CART:", newCart);
 
-  };
+    return newCart;
+  });
+};
 
   const increaseQty = (index) => {
     actionRef.current = "UPDATE";
@@ -889,7 +893,9 @@ function App() {
           ),
 
           comboSelections: item.comboSelections || [],
-          lineItemId: item.lineItemId || item.OrderDetailId || null,
+          lineItemId: item.status === "NEW"
+          ? null
+          : (item.lineItemId || item.OrderDetailId || null),
 
           note: item.note || "",
 
@@ -926,43 +932,47 @@ function App() {
           } catch (syncErr) {
             console.log("Refresh GET error:", syncErr);
           }
-        } else if (actionRef.current === "INSERT") {
-          // Silently sync real OrderDetailIds for new items without overwriting optimistic quantities
-          try {
-            const cartRes = await fetch(`${API}/order/cart/${tableId}`);
-            const cartData = await cartRes.json();
+        } else 
+          if (actionRef.current === "INSERT") {
+   return;
+}
+        //   if (actionRef.current === "INSERT") {
+         
+        //   try {
+        //     const cartRes = await fetch(`${API}/order/cart/${tableId}`);
+        //     const cartData = await cartRes.json();
 
-            if (cartData && cartData.items) {
-              setCart(prev => {
-                let changed = false;
-                const updatedCart = prev.map(item => {
-                  if (!item.OrderDetailId && !item.lineItemId) {
-                    const match = cartData.items.find(b =>
-                      (b.id || b.DishId || b.dishId) == (item.DishId || item.id)
-                    );
-                    if (match && (match.OrderDetailId || match.lineItemId)) {
-                      changed = true;
-                      return {
-                        ...item,
-                        OrderDetailId: match.OrderDetailId || match.lineItemId,
-                        lineItemId: match.OrderDetailId || match.lineItemId
-                      };
-                    }
-                  }
-                  return item;
-                });
+        //     if (cartData && cartData.items) {
+        //       setCart(prev => {
+        //         let changed = false;
+        //         const updatedCart = prev.map(item => {
+        //           if (!item.OrderDetailId && !item.lineItemId) {
+        //             const match = cartData.items.find(b =>
+        //               (b.id || b.DishId || b.dishId) == (item.DishId || item.id)
+        //             );
+        //             if (match && (match.OrderDetailId || match.lineItemId)) {
+        //               changed = true;
+        //               return {
+        //                 ...item,
+        //                 OrderDetailId: match.OrderDetailId || match.lineItemId,
+        //                 lineItemId: match.OrderDetailId || match.lineItemId
+        //               };
+        //             }
+        //           }
+        //           return item;
+        //         });
 
-                if (changed) {
-                  skipSaveRef.current = true;
-                  return updatedCart;
-                }
-                return prev;
-              });
-            }
-          } catch (syncErr) {
-            console.log("Silent ID sync error:", syncErr);
-          }
-        }
+        //         if (changed) {
+        //           skipSaveRef.current = true;
+        //           return updatedCart;
+        //         }
+        //         return prev;
+        //       });
+        //     }
+        //   } catch (syncErr) {
+        //     console.log("Silent ID sync error:", syncErr);
+        //   }
+        // }
       }
 
     } catch (err) {
@@ -972,6 +982,12 @@ function App() {
       setIsCartLoading(false);
     }
   };
+
+
+  console.log("PLACE ORDER");
+console.log("CURRENT ORDER ID:", currentOrderId);
+console.log("PAYMENT DONE:", paymentDone);
+console.log("CART:", cart);
 
   const placeOrder = async () => {
     //  setShowOnlinePayment(false); 
@@ -1017,34 +1033,21 @@ function App() {
           price: item.Price || item.price || 0,
           finalAmount: (item.Price || item.price || 0) * (item.qty || 1),
 
-          // modifiers: (item.selectedMods || [])
-          //   .filter((m) =>
-          //     /^[0-9a-fA-F-]{36}$/.test(m.ModifierID)
-          //   )
-          //   .map((m) => ({
-          //     ModifierId: m.ModifierID,
-          //     ModifierName: m.ModifierName,
-          //     Price: m.Price || 0,
-          //     qty: 1,
-          //   })),
-
           modifiers: (item.selectedMods || [])
-  .filter((m) =>
-    /^[0-9a-fA-F-]{36}$/.test(m.ModifierID)
-  )
-  .map((m) => ({
-    DishId: item.DishId || item.id,
-    ModifierID: m.ModifierID,
-    ModifierCode: m.ModifierCode || "",
-    ModifierName: m.ModifierName,
-    Price: m.Price || 0,
-    DishCost: m.DishCost || 0,
-    isPriceAffect: m.isPriceAffect || false,
-    isDishPrice: m.isDishPrice || false,
-  })),
+            .filter((m) =>
+              /^[0-9a-fA-F-]{36}$/.test(m.ModifierID)
+            )
+            .map((m) => ({
+              ModifierId: m.ModifierID,
+              ModifierName: m.ModifierName,
+              Price: m.Price || 0,
+              qty: 1,
+            })),
 
           comboSelections: item.comboSelections || [],
-          lineItemId: item.lineItemId || item.OrderDetailId || null,
+          lineItemId: item.status === "NEW"
+            ? null
+            : (item.lineItemId || item.OrderDetailId || null),
 
           note: item.note || "",
 

@@ -220,22 +220,17 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
     // }
 
     if (!lineItemId || lineItemId.length < 10) {
-
       const matchCheck = await transaction.request()
         .input("orderId", sql.UniqueIdentifier, orderGuid)
         .input("dishId", sql.UniqueIdentifier, finalProdId)
-        .input("mods", sql.NVarChar(sql.MAX), modsJSON)
         .query(`
       SELECT TOP 1 OrderDetailId
       FROM RestaurantOrderDetailCur
       WHERE OrderId = @orderId
         AND DishId = @dishId
-        AND CAST(ModifiersJSON AS NVARCHAR(MAX)) = LTRIM(RTRIM(@mods))
-        AND StatusCode <> 0
+        AND StatusCode NOT IN (2,3,4)
       ORDER BY CreatedOn DESC
     `);
-      console.log("MATCH COUNT:", matchCheck.recordset.length);
-      console.log("LINE ITEM ID:", lineItemId);
 
       if (matchCheck.recordset.length > 0) {
         lineItemId = matchCheck.recordset[0].OrderDetailId;
@@ -251,8 +246,8 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
     if (detailCheck.recordset.length > 0) {
       if (
         detailCheck.recordset[0].StatusCode !== 4 &&
-        detailCheck.recordset[0].StatusCode !== 3 &&
-        detailCheck.recordset[0].StatusCode !== 2
+        detailCheck.recordset[0].StatusCode !== 3 
+        // detailCheck.recordset[0].StatusCode !== 2
       ) {
         await transaction.request()
           .input("detailId", sql.UniqueIdentifier, lineItemId)
@@ -280,7 +275,7 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
           .input("isTakeaway", sql.Bit, takeawayInfo.value ? 1 : 0)
           .input("finalAmount", sql.Decimal(18, 2), finalAmount)
           .input("promoAmount", sql.Decimal(18, 2), Number(item.promoAmount || 0))
-          .query("UPDATE RestaurantOrderDetailCur SET Quantity = @qty, PricePerUnit = @cost,PROMO_AMOUNT = @promoAmount, ActualAmount = @finalAmount, TotalDetailLineAmount = @finalAmount, StatusCode = @statusCode, Description = @dishName, DishName = @dishName, ModifiedBy = @userId, ModifiedOn = GETDATE(), ModifiersJSON = @mods, ComboDetailsJSON = @comboDetailsJSON, OrderNumber = @orderNo, Remarks = @note, isTakeAway = @isTakeaway WHERE OrderDetailId = @detailId AND StatusCode <> 4 and StatusCode <> 3 and StatusCode <> 2");
+          .query("UPDATE RestaurantOrderDetailCur SET Quantity = @qty, PricePerUnit = @cost,PROMO_AMOUNT = @promoAmount, ActualAmount = @finalAmount, TotalDetailLineAmount = @finalAmount, StatusCode = @statusCode, Description = @dishName, DishName = @dishName, ModifiedBy = @userId, ModifiedOn = GETDATE(), ModifiersJSON = @mods, ComboDetailsJSON = @comboDetailsJSON, OrderNumber = @orderNo, Remarks = @note, isTakeAway = @isTakeaway WHERE OrderDetailId = @detailId AND StatusCode <> 4 and StatusCode <> 3");
       }
     } else {
       await transaction.request()
@@ -566,8 +561,6 @@ router.post("/send", async (req, res) => {
       "SYNC ITEMS:",
       JSON.stringify(items, null, 2)
     );
-
-    
     console.log("SEND ITEMS RECEIVED:", JSON.stringify(items, null, 2));
     const pool = await poolPromise;
 
@@ -1054,7 +1047,7 @@ router.post("/update-item-status", async (req, res) => {
     await pool.request()
       .input("id", sql.UniqueIdentifier, lineItemId)
       .input("code", sql.Int, statusMap[status] || 2)
-      .query("UPDATE RestaurantOrderDetailCur SET StatusCode = @code, ModifiedOn = GETDATE() WHERE OrderDetailId = @id AND StatusCode <> 4 and StatusCode <> 3 and StatusCode <> 2");
+      .query("UPDATE RestaurantOrderDetailCur SET StatusCode = @code, ModifiedOn = GETDATE() WHERE OrderDetailId = @id AND StatusCode <> 4 and StatusCode <> 3");
 
     req.app.get("io")?.emit("item_status_updated", { lineItemId, status, tableId, orderId });
     res.json({ success: true });
@@ -1325,7 +1318,6 @@ router.post("/mark-sent", async (req, res) => {
           AND StatusCode <> 0
           AND StatusCode <> 4
           AND StatusCode <> 3
-          AND StatusCode <> 2
       `);
 
     if (promoAmount && Number(promoAmount) > 0) {
