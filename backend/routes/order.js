@@ -566,6 +566,8 @@ router.post("/send", async (req, res) => {
       "SYNC ITEMS:",
       JSON.stringify(items, null, 2)
     );
+
+    
     console.log("SEND ITEMS RECEIVED:", JSON.stringify(items, null, 2));
     const pool = await poolPromise;
 

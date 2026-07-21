@@ -1017,16 +1017,31 @@ function App() {
           price: item.Price || item.price || 0,
           finalAmount: (item.Price || item.price || 0) * (item.qty || 1),
 
+          // modifiers: (item.selectedMods || [])
+          //   .filter((m) =>
+          //     /^[0-9a-fA-F-]{36}$/.test(m.ModifierID)
+          //   )
+          //   .map((m) => ({
+          //     ModifierId: m.ModifierID,
+          //     ModifierName: m.ModifierName,
+          //     Price: m.Price || 0,
+          //     qty: 1,
+          //   })),
+
           modifiers: (item.selectedMods || [])
-            .filter((m) =>
-              /^[0-9a-fA-F-]{36}$/.test(m.ModifierID)
-            )
-            .map((m) => ({
-              ModifierId: m.ModifierID,
-              ModifierName: m.ModifierName,
-              Price: m.Price || 0,
-              qty: 1,
-            })),
+  .filter((m) =>
+    /^[0-9a-fA-F-]{36}$/.test(m.ModifierID)
+  )
+  .map((m) => ({
+    DishId: item.DishId || item.id,
+    ModifierID: m.ModifierID,
+    ModifierCode: m.ModifierCode || "",
+    ModifierName: m.ModifierName,
+    Price: m.Price || 0,
+    DishCost: m.DishCost || 0,
+    isPriceAffect: m.isPriceAffect || false,
+    isDishPrice: m.isDishPrice || false,
+  })),
 
           comboSelections: item.comboSelections || [],
           lineItemId: item.lineItemId || item.OrderDetailId || null,
