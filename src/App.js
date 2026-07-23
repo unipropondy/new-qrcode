@@ -66,6 +66,85 @@ function App() {
   const [upiUpiId, setUpiUpiId] = useState('');
   const [tempPaynowUpiId, setTempPaynowUpiId] = useState('');
   const [tempUpiUpiId, setTempUpiUpiId] = useState('');
+  const cartSaveInFlightRef = useRef(false);
+  const cartLoadTokenRef = useRef(0);
+
+  const createStableCartId = () => `cart-${crypto.randomUUID()}`;
+
+  const getModifierKey = (mods = []) =>
+    [...mods]
+      .map((m) => String(m.ModifierID || m.ModifierId || m.modifierId || ""))
+      .filter(Boolean)
+      .sort()
+      .join("-");
+
+  const normalizeCartItem = (item = {}) => {
+    const selectedMods = Array.isArray(item.selectedMods)
+      ? item.selectedMods
+      : Array.isArray(item.modifiers)
+        ? item.modifiers
+        : [];
+
+    const normalizedItem = {
+      ...item,
+      DishId: item.DishId || item.id || item.dishId,
+      lineItemId: item.lineItemId || item.OrderDetailId || item.LineItemId || null,
+      OrderDetailId: item.OrderDetailId || item.lineItemId || item.LineItemId || null,
+      cartId: item.cartId || item.lineItemId || item.OrderDetailId || createStableCartId(),
+      qty: Number(item.qty || 1),
+      selectedMods,
+      modifierKey: item.modifierKey || getModifierKey(selectedMods),
+      Price: Number(item.Price || item.price || 0),
+      price: Number(item.Price || item.price || 0),
+      finalPrice: Number(item.finalPrice || item.Price || item.price || 0),
+      status: item.status || "NEW",
+    };
+
+    return normalizedItem;
+  };
+
+  const getCartItemIdentity = (item = {}) => {
+    return (
+      item.cartId ||
+      item.lineItemId ||
+      item.OrderDetailId ||
+      `${item.DishId || item.id || "unknown"}-${item.modifierKey || ""}`
+    );
+  };
+
+  const mergeCartWithServer = (previousCart = [], serverItems = []) => {
+    const merged = previousCart.map(normalizeCartItem);
+
+    serverItems.forEach((serverItem) => {
+      const normalizedServerItem = normalizeCartItem(serverItem);
+      const matchingIndex = merged.findIndex((localItem) => {
+        const sameDish = String(localItem.DishId || localItem.id) === String(normalizedServerItem.DishId || normalizedServerItem.id);
+        const sameModifierKey = (localItem.modifierKey || "") === (normalizedServerItem.modifierKey || "");
+        const sameCombo = Boolean(localItem.isCombo) === Boolean(normalizedServerItem.isCombo);
+        return sameDish && sameModifierKey && sameCombo;
+      });
+
+      if (matchingIndex >= 0) {
+        merged[matchingIndex] = {
+          ...merged[matchingIndex],
+          ...normalizedServerItem,
+          cartId: merged[matchingIndex].cartId || normalizedServerItem.cartId,
+          lineItemId: normalizedServerItem.lineItemId || merged[matchingIndex].lineItemId,
+          OrderDetailId: normalizedServerItem.OrderDetailId || merged[matchingIndex].OrderDetailId,
+          selectedMods: normalizedServerItem.selectedMods?.length
+            ? normalizedServerItem.selectedMods
+            : merged[matchingIndex].selectedMods,
+          qty: Number(normalizedServerItem.qty || merged[matchingIndex].qty || 1),
+          modifierKey: normalizedServerItem.modifierKey || merged[matchingIndex].modifierKey,
+          status: normalizedServerItem.status || merged[matchingIndex].status || "NEW",
+        };
+      } else {
+        merged.push(normalizedServerItem);
+      }
+    });
+
+    return merged;
+  };
 
   const handlePaymentSuccess = (msg) => {
     setCart((prev) => prev.map((item) => ({ ...item, status: "SENT" })));
@@ -169,9 +248,8 @@ function App() {
 
   useEffect(() => {
 
-    if (!tableNo) return;
+    if (!tableNo || !tableId) return;
 
-    // ✅ FIX: Do not save cart after payment is completed
     if (paymentDone) return;
 
     if (skipSaveRef.current) {
@@ -179,11 +257,13 @@ function App() {
       return;
     }
 
+    if (cartSaveInFlightRef.current) return;
+
     saveCartToBackend();
     console.log("SAVE CART CALLED");
-console.log("CART BEFORE SAVE:", cart);
+    console.log("CART BEFORE SAVE:", cart);
 
-  }, [cart, paymentDone]);
+  }, [cart, paymentDone, tableId, tableNo]);
 
   const loadKitchens = async () => {
     try {
@@ -408,7 +488,7 @@ console.log("CART BEFORE SAVE:", cart);
 
     const newCartItem = {
       ...selectedDish,
-      cartId: crypto.randomUUID(),
+      cartId: createStableCartId(),
       qty: 1,
       isCombo: true,
       price: finalPrice,
@@ -441,7 +521,7 @@ console.log("CART BEFORE SAVE:", cart);
 
     const newCartItem = {
       ...selectedDish,
-      cartId: crypto.randomUUID(),
+      cartId: createStableCartId(),
       qty: 1,
       isCombo: true,
       price: finalPrice,
@@ -480,110 +560,81 @@ console.log("CART BEFORE SAVE:", cart);
     }
   };
   const addToCartSimple = async (dish) => {
-     console.log("🔥 ADD CLICK:", dish.Name);
-  actionRef.current = "INSERT";
+    const normalizedDish = normalizeCartItem(dish);
+    actionRef.current = "INSERT";
 
-  console.log("ADD CLICK:", dish.Name);
+    setCart((prev) => {
+      const normalizedPrev = prev.map(normalizeCartItem);
+      const existing = normalizedPrev.find((item) => {
+        const sameDish = String(item.DishId || item.id) === String(normalizedDish.DishId || normalizedDish.id);
+        const sameModifierKey = (item.modifierKey || "") === "";
+        const sameRowType = !item.isCombo;
+        return sameDish && sameModifierKey && sameRowType;
+      });
 
-  setCart((prev) => {
-    console.log("PREV CART:", prev);
+      if (existing) {
+        return normalizedPrev.map((item) =>
+          getCartItemIdentity(item) === getCartItemIdentity(existing)
+            ? {
+                ...item,
+                qty: Number(item.qty || 1) + 1,
+                status: "NEW",
+              }
+            : item
+        );
+      }
 
-    const existing = prev.find(
-      (item) =>
-        (item.DishId || item.id) === dish.DishId
-    );
+      return [
+        ...normalizedPrev,
+        {
+          ...normalizedDish,
+          cartId: createStableCartId(),
+          qty: 1,
+          selectedMods: [],
+          modifierKey: "",
+          Price: Number(normalizedDish.Price || 0),
+          price: Number(normalizedDish.Price || 0),
+          finalPrice: Number(normalizedDish.Price || 0),
+          status: "NEW",
+        },
+      ];
+    });
+  };
 
-    if (existing) {
-      const updated = prev.map((item) =>
-        (item.DishId || item.id) === dish.DishId
-          ? {
-              ...item,
-              qty: (item.qty || 1) + 1,
-              status: "NEW",
-            }
-          : item
-      );
-
-      console.log("UPDATED CART:", updated);
-
-      return updated;
-    }
-
-    const newCart = [
-      ...prev,
-      {
-        ...dish,
-        cartId: crypto.randomUUID(),
-        qty: 1,
-        selectedMods: [],
-        finalPrice: Number(dish.Price || 0),
-        status: "NEW",
-      },
-    ];
-
-    console.log("NEW CART:", newCart);
-
-    return newCart;
-  });
-};
-
-  const increaseQty = (index) => {
+  const increaseQty = (itemKey) => {
     actionRef.current = "UPDATE";
     setCart((prev) =>
-
-      prev.map((item, i) =>
-
-        i === index
+      prev.map(normalizeCartItem).map((item) =>
+        getCartItemIdentity(item) === itemKey
           ? {
             ...item,
-            qty: (item.qty || 1) + 1,
+            qty: Number(item.qty || 1) + 1,
           }
           : item
       )
     );
   };
 
-  const decreaseQty = async (index) => {
-    const item = cart[index];
+  const decreaseQty = async (itemKey) => {
+    const normalizedCart = cart.map(normalizeCartItem);
+    const item = normalizedCart.find((entry) => getCartItemIdentity(entry) === itemKey);
     if (!item) return;
 
     let currentQty = Number(item.qty);
     if (isNaN(currentQty)) currentQty = 1;
 
-    // qty = 1 → delete from DB
     if (currentQty <= 1) {
-
-      // ✅ Set skipSaveRef BEFORE setCart so the useEffect does NOT fire
-      // saveCartToBackend automatically — preventing a race with the delete API
       skipSaveRef.current = true;
       deleteInProgressRef.current = true;
       actionRef.current = "DELETE";
 
-      // Optimistic UI update: reliably remove by exact index
-      setCart((prev) => {
-        const newCart = [...prev];
-        newCart.splice(index, 1);
-        return newCart;
-      });
+      setCart((prev) => prev
+        .map(normalizeCartItem)
+        .filter((entry) => getCartItemIdentity(entry) !== itemKey)
+      );
 
       try {
-        let actualLineItemId = item.lineItemId || item.OrderDetailId;
-
-        // If no DB ID in state, fetch once from DB to find it
-        if (!actualLineItemId && tableId) {
-          try {
-            const cartRes = await fetch(`${API}/order/cart/${tableId}`);
-            const cartData = await cartRes.json();
-            const match = cartData?.items?.find(b =>
-              String(b.id || b.DishId || b.dishId) === String(item.DishId || item.id)
-            );
-            if (match) {
-              actualLineItemId = match.lineItemId || match.OrderDetailId;
-            }
-          } catch (e) {
-            console.log("Fetch lineItemId error:", e);
-          }
-        }
+        const actualLineItemId = item.lineItemId || item.OrderDetailId;
 
         if (actualLineItemId) {
           await fetch(`${API}/order/delete-cart-item`, {
@@ -598,12 +649,10 @@ console.log("CART BEFORE SAVE:", cart);
         } else {
           console.warn("DELETE ITEM: no lineItemId found, skipping DB delete");
         }
-
       } catch (err) {
         console.log("DELETE ITEM ERROR:", err);
       } finally {
         deleteInProgressRef.current = false;
-        // Reload cart from DB to confirm final state
         if (tableId) {
           await loadCart(tableId);
         }
@@ -612,14 +661,14 @@ console.log("CART BEFORE SAVE:", cart);
       return;
     }
 
-    // decrease qty
     actionRef.current = "UPDATE";
-    setCart((prev) => {
-      const newCart = [...prev];
-      newCart[index] = { ...newCart[index], qty: currentQty - 1 };
-      return newCart;
-    });
-
+    setCart((prev) =>
+      prev.map(normalizeCartItem).map((entry) =>
+        getCartItemIdentity(entry) === itemKey
+          ? { ...entry, qty: currentQty - 1 }
+          : entry
+      )
+    );
   };
 
   // Online payment flow using YeahPay demo
@@ -839,12 +888,17 @@ console.log("CART BEFORE SAVE:", cart);
   };
 
   const saveCartToBackend = async () => {
-    // ✅ FIX: Prevent inserting new records into RestaurantOrderDetailCur after payment
     if (paymentDone) {
       console.log("[saveCart] Skipped — payment already done.");
       setIsCartLoading(false);
       return;
     }
+
+    if (cartSaveInFlightRef.current) {
+      return;
+    }
+
+    cartSaveInFlightRef.current = true;
     setIsCartLoading(true);
     try {
 
@@ -875,32 +929,26 @@ console.log("CART BEFORE SAVE:", cart);
 
         availableCredit: availableCredit,
 
-        items: cart.map((item) => ({
+        items: cart.map((item) => {
+          const normalizedItem = normalizeCartItem(item);
 
-          id: item.DishId || item.id,
-
-          name: item.Name || item.name,
-
-          qty: item.qty || 1,
-
-          price: item.Price || item.price || 0,
-
-          finalAmount: (item.Price || item.price || 0) * (item.qty || 1),
-
-          modifiers: (item.selectedMods || []).filter(
-            (m) =>
-              /^[0-9a-fA-F-]{36}$/.test(m.ModifierID)
-          ),
-
-          comboSelections: item.comboSelections || [],
-          lineItemId: item.status === "NEW"
-          ? null
-          : (item.lineItemId || item.OrderDetailId || null),
-
-          note: item.note || "",
-
-          status: "NEW",
-        })),
+          return {
+            id: normalizedItem.DishId || normalizedItem.id,
+            name: normalizedItem.Name || normalizedItem.name,
+            qty: normalizedItem.qty || 1,
+            price: normalizedItem.Price || normalizedItem.price || 0,
+            finalAmount: (normalizedItem.Price || normalizedItem.price || 0) * (normalizedItem.qty || 1),
+            modifiers: (normalizedItem.selectedMods || []).filter(
+              (m) =>
+                /^[0-9a-fA-F-]{36}$/.test(m.ModifierID || m.ModifierId || "")
+            ),
+            comboSelections: normalizedItem.comboSelections || [],
+            lineItemId: normalizedItem.lineItemId || normalizedItem.OrderDetailId || null,
+            cartId: normalizedItem.cartId,
+            note: normalizedItem.note || "",
+            status: normalizedItem.status || "NEW",
+          };
+        }),
       };
 
       const res = await fetch(`${API}/order/save-cart`, {
@@ -1022,37 +1070,30 @@ console.log("CART:", cart);
 
         availableCredit: availableCredit,
 
-        items: cart.map((item) => ({
+        items: cart.map((item) => {
+          const normalizedItem = normalizeCartItem(item);
 
-          id: item.DishId || item.id,
-
-          name: item.Name || item.name,
-
-          qty: item.qty || 1,
-
-          price: item.Price || item.price || 0,
-          finalAmount: (item.Price || item.price || 0) * (item.qty || 1),
-
-          modifiers: (item.selectedMods || [])
-            .filter((m) =>
-              /^[0-9a-fA-F-]{36}$/.test(m.ModifierID)
-            )
-            .map((m) => ({
-              ModifierId: m.ModifierID,
-              ModifierName: m.ModifierName,
-              Price: m.Price || 0,
-              qty: 1,
-            })),
-
-          comboSelections: item.comboSelections || [],
-          lineItemId: item.status === "NEW"
-            ? null
-            : (item.lineItemId || item.OrderDetailId || null),
-
-          note: item.note || "",
-
-          status: "SENT",
-        })),
+          return {
+            id: normalizedItem.DishId || normalizedItem.id,
+            name: normalizedItem.Name || normalizedItem.name,
+            qty: normalizedItem.qty || 1,
+            price: normalizedItem.Price || normalizedItem.price || 0,
+            finalAmount: (normalizedItem.Price || normalizedItem.price || 0) * (normalizedItem.qty || 1),
+            modifiers: (normalizedItem.selectedMods || [])
+              .filter((m) => /^[0-9a-fA-F-]{36}$/.test(m.ModifierID || m.ModifierId || ""))
+              .map((m) => ({
+                ModifierId: m.ModifierID || m.ModifierId,
+                ModifierName: m.ModifierName,
+                Price: m.Price || 0,
+                qty: 1,
+              })),
+            comboSelections: normalizedItem.comboSelections || [],
+            lineItemId: normalizedItem.lineItemId || normalizedItem.OrderDetailId || null,
+            cartId: normalizedItem.cartId,
+            note: normalizedItem.note || "",
+            status: "SENT",
+          };
+        }),
       };
 
       console.log("SEND PAYLOAD", JSON.stringify(payload, null, 2));
@@ -1135,51 +1176,51 @@ console.log("CART:", cart);
     }
   };
   const loadCart = async (tableId) => {
+    const loadToken = ++cartLoadTokenRef.current;
 
     try {
-
       const res = await fetch(`${API}/order/cart/${tableId}`);
-
       const data = await res.json();
 
       console.log("LOAD CART:", data);
-
       console.log("LOAD CART ITEMS:", JSON.stringify(data.items, null, 2));
 
       if (data.items) {
-
-        const formatted = data.items.map((item) => ({
-
-          ...item,
-
-          lineItemId:
-            item.OrderDetailId ||
-            item.lineItemId,
-
-          cartId:
-            item.OrderDetailId ||
-            crypto.randomUUID(),
-
-          selectedMods:
-            item.modifiers || [],
-
-          comboSelections:
-            item.comboSelections ||
-            (item.ComboDetailsJSON
+        const formatted = data.items.map((item) => {
+          const comboSelections = Array.isArray(item.comboSelections)
+            ? item.comboSelections
+            : item.ComboDetailsJSON
               ? JSON.parse(item.ComboDetailsJSON)
-              : []),
-        }));
+              : [];
+
+          const selectedMods = item.modifiers || [];
+
+          return normalizeCartItem({
+            ...item,
+            DishId: item.id || item.DishId || item.dishId,
+            Name: item.name || item.Name || item.DishName,
+            lineItemId: item.lineItemId || item.OrderDetailId || null,
+            OrderDetailId: item.OrderDetailId || item.lineItemId || null,
+            cartId: item.cartId || item.lineItemId || item.OrderDetailId || createStableCartId(),
+            selectedMods,
+            comboSelections,
+            modifierKey: getModifierKey(selectedMods),
+            status: item.status || "NEW",
+          });
+        });
+
+        if (loadToken !== cartLoadTokenRef.current) {
+          return;
+        }
 
         skipSaveRef.current = true;
-        setCart(formatted);
+        setCart((prev) => mergeCartWithServer(prev, formatted));
       }
 
       if (data.currentOrderId) {
         setCurrentOrderId(data.currentOrderId);
       }
-
     } catch (err) {
-
       console.log("LOAD CART ERROR:", err);
     }
   };
@@ -1221,9 +1262,14 @@ console.log("CART:", cart);
 
     const allAvailable = [...modifiers, ...customMods];
 
-    const selectedMods = allAvailable.filter((m) =>
-      selectedModifierIds.includes(m.ModifierID)
-    );
+    const selectedMods = allAvailable
+      .filter((m) => selectedModifierIds.includes(m.ModifierID))
+      .map((m) => ({
+        ...m,
+        ModifierID: String(m.ModifierID || m.ModifierId || ""),
+        ModifierName: m.ModifierName,
+        Price: Number(m.Price || 0),
+      }));
 
     const extra = selectedMods.reduce((sum, m) => {
 
@@ -1239,84 +1285,43 @@ console.log("CART:", cart);
 
     }, 0);
 
-    const finalPrice =
-      Number(selectedDish.Price || 0) + extra;
-
-    console.log("Selected Mods:", selectedMods);
-    console.log("Extra:", extra);
-    console.log("Final Price:", finalPrice);
-
-    // const finalPrice =
-    //   Number(selectedDish.Price || 0) +
-    //   Number(extra);
+    const finalPrice = Number(selectedDish.Price || 0) + extra;
+    const modifierKey = getModifierKey(selectedMods);
 
     setCart((prev) => {
-
-      // same dish + same modifiers
-      const existing = prev.find((item) => {
-
-        const oldMods = JSON.stringify(
-          [...(item.selectedMods || [])]
-            .map((m) => m.ModifierID)
-            .sort()
-        );
-
-        const newMods = JSON.stringify(
-          [...selectedMods]
-            .map((m) => m.ModifierID)
-            .sort()
-        );
-
-        console.log("showOnlinePayment =", showOnlinePayment);
-        console.log("promoAmount =", promoAmount);
-        console.log("totalAmount =", totalAmount);
-
-        return (
-          item.DishId === selectedDish.DishId &&
-          (item.modifierKey || "") ===
-          selectedMods
-            .map((m) => m.ModifierID)
-            .sort()
-            .join("-")
-        );
+      const normalizedPrev = prev.map(normalizeCartItem);
+      const existing = normalizedPrev.find((item) => {
+        const sameDish = String(item.DishId || item.id) === String(selectedDish.DishId || selectedDish.id);
+        const sameModifierKey = (item.modifierKey || "") === modifierKey;
+        const sameRowType = !item.isCombo;
+        return sameDish && sameModifierKey && sameRowType;
       });
 
-      // increase qty
       if (existing) {
-        return prev.map((item) =>
-          item === existing
+        return normalizedPrev.map((item) =>
+          getCartItemIdentity(item) === getCartItemIdentity(existing)
             ? {
-              ...item,
-              qty: (item.qty || 1) + 1,
-              status: "NEW",
-            }
+                ...item,
+                qty: Number(item.qty || 1) + 1,
+                status: "NEW",
+              }
             : item
         );
       }
 
-      // new cart item
       return [
-        ...prev,
-        {
+        ...normalizedPrev,
+        normalizeCartItem({
           ...selectedDish,
-
-          cartId: crypto.randomUUID(),
-
+          cartId: createStableCartId(),
           qty: 1,
-
           selectedMods,
-
-          Price: finalPrice,      // ⭐ Add this
-          price: finalPrice,      // ⭐ Add this
-          finalPrice: finalPrice, // Keep this
-
-          modifierKey: selectedMods
-            .map((m) => m.ModifierID)
-            .sort()
-            .join("-"),
-
+          Price: finalPrice,
+          price: finalPrice,
+          finalPrice,
+          modifierKey,
           status: "NEW",
-        },
+        }),
       ];
     });
 
@@ -1753,9 +1758,9 @@ console.log("CART:", cart);
                     ) : (
                       <div className="cart-items-container">
                         <div className="cart-items-list">
-                          {cart.map((item, index) => (
+                          {cart.map((item) => (
                             <div
-                              key={index}
+                              key={getCartItemIdentity(item)}
                               className="cart-item"
                               style={{
                                 background: item.IsServiceCharge ? "#FFF3F3" : "#fff",
@@ -1779,7 +1784,7 @@ console.log("CART:", cart);
                                   {item.selectedMods?.length > 0 && (
                                     <div className="ci-mods">
                                       {item.selectedMods.map((m, index) => (
-                                        <span key={`${m.ModifierID}-${index}`}>
+                                        <span key={`${m.ModifierID || m.ModifierId || m.modifierId || "mod"}-${index}-${item.cartId || item.lineItemId || item.OrderDetailId || "row"}`}>
                                           {m.ModifierName}
                                           {(Number(m.Price || m.DishCost || 0) > 0) && (
                                             <span className="modifier-price">
@@ -1796,14 +1801,14 @@ console.log("CART:", cart);
                                   {item.comboSelections?.length > 0 && (
                                     <div className="ci-mods">
                                       {item.comboSelections.map((group, index) => (
-                                        <div key={index} style={{ marginTop: "4px" }}>
+                                        <div key={`${group.groupId || group.groupName || "group"}-${index}-${item.cartId || item.lineItemId || item.OrderDetailId || "row"}`} style={{ marginTop: "4px" }}>
                                           <div style={{ color: "#f97316", fontWeight: "600" }}>
                                             {group.groupName}:
                                           </div>
 
                                           {group.items?.map((option, idx) => (
                                             <div
-                                              key={idx}
+                                              key={`${option.dishId || option.name || "option"}-${idx}-${item.cartId || item.lineItemId || item.OrderDetailId || "row"}`}
                                               style={{
                                                 marginLeft: "12px",
                                                 color: "#666",
@@ -1827,7 +1832,7 @@ console.log("CART:", cart);
 
                                   <button
                                     className="qty-btn"
-                                    onClick={() => decreaseQty(index)}
+                                    onClick={() => decreaseQty(getCartItemIdentity(item))}
                                     // disabled={
                                     //   (item.status && item.status === "SENT") ||
                                     //   isCartLoading
@@ -1846,7 +1851,7 @@ console.log("CART:", cart);
 
                                   <button
                                     className="qty-btn"
-                                    onClick={() => increaseQty(index)}
+                                    onClick={() => increaseQty(getCartItemIdentity(item))}
                                     //  disabled={
                                     //   (item.status && item.status === "SENT") ||
                                     //   isCartLoading
@@ -2570,15 +2575,15 @@ console.log("CART:", cart);
 
                         <div style={{ flex: 1, background: 'white', borderRadius: '20px', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)', overflowY: 'auto' }}>
                           <h3 style={{ margin: '0 0 15px 0', textTransform: 'uppercase', fontSize: '11px', color: '#666', letterSpacing: '0.5px' }}>Order Items</h3>
-                          {cart.map((item, idx) => (
-                            <div key={idx} style={{ display: 'flex', padding: '12px 0', borderBottom: '1px solid #f3f4f6' }}>
+                          {cart.map((item) => (
+                            <div key={getCartItemIdentity(item)} style={{ display: 'flex', padding: '12px 0', borderBottom: '1px solid #f3f4f6' }}>
                               <div style={{ width: '30px', color: '#f97316', fontWeight: '900', fontSize: '13px' }}>{item.qty}x</div>
                               <div style={{ flex: 1, fontWeight: '600', color: '#1f2937', fontSize: '13px' }}>
                                 {item.Name || item.name}
                                 {item.selectedMods?.length > 0 && (
                                   <div className="ci-mods">
                                     {item.selectedMods.map((m, index) => (
-                                      <span key={m.ModifierID}>
+                                      <span key={`${m.ModifierID || m.ModifierId || m.modifierId || "mod"}-${index}-${getCartItemIdentity(item)}`}>
                                         {m.ModifierName}
                                         {Number(m.Price || m.DishCost || 0) > 0 && (
                                           <span className="modifier-price">

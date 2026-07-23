@@ -151,11 +151,11 @@ const totalQty = (Array.isArray(orders) ? orders : []).reduce(
         {/* ORDER ITEMS */}
         <div className="settlement-items-list">
 
-          {(Array.isArray(orders) ? orders : []).map((item, index) => (
+          {(Array.isArray(orders) ? orders : []).map((item) => (
 
             <div
               className="settlement-order-item"
-              key={index}
+              key={`${item.OrderDetailId || item.OrderId || item.DishId || item.DishName || "order"}-${item.Quantity || 0}`}
             >
 
               <div className="settlement-qty-box">
@@ -192,7 +192,7 @@ const totalQty = (Array.isArray(orders) ? orders : []).reduce(
                         return (
                           <div className="settlement-mods">
                             {comboDetails.map((group, index) => (
-                              <div key={index} style={{ marginTop: "4px" }}>
+                              <div key={`${group.groupId || group.groupName || "group"}-${index}-${item.OrderDetailId || item.OrderId || item.DishId || item.DishName || "order"}`} style={{ marginTop: "4px" }}>
                                 <div
                                   style={{
                                     color: "#f97316",
@@ -205,7 +205,7 @@ const totalQty = (Array.isArray(orders) ? orders : []).reduce(
 
                                 {group.items?.map((option, idx) => (
                                   <div
-                                    key={idx}
+                                    key={`${option.dishId || option.name || "option"}-${idx}-${item.OrderDetailId || item.OrderId || item.DishId || item.DishName || "order"}`}
                                     style={{
                                       marginLeft: "14px",
                                       color: "#666",
