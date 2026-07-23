@@ -46,6 +46,9 @@ function App() {
 
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
   const [applyPromo, setApplyPromo] = useState(false);
+  const [promoCode, setPromoCode] = useState("");
+  const [promoAmount, setPromoAmount] = useState(0);
+  const [availableCredit, setAvailableCredit] = useState(0);
   const [showOnlinePayment, setShowOnlinePayment] = useState(false);
   const [showPayNowModal, setShowPayNowModal] = useState(false);
   const [showUpiModal, setShowUpiModal] = useState(false);
@@ -146,7 +149,32 @@ function App() {
     return merged;
   };
 
+  const clearPromoSessionState = () => {
+    setApplyPromo(false);
+    setPromoCode("");
+    setPromoAmount(0);
+    setAvailableCredit(0);
+    localStorage.removeItem("promoCode");
+    localStorage.removeItem("promoAmount");
+    localStorage.removeItem("availableCredit");
+  };
+
+  const syncPromoSessionFromUser = (user = {}) => {
+    const nextPromoCode = String(user?.Promocode || "").trim();
+    const nextPromoAmount = Number(user?.Promoamount || 0);
+    const nextAvailableCredit = Number(user?.AvailableCredit || 0);
+
+    setPromoCode(nextPromoCode);
+    setPromoAmount(nextPromoAmount);
+    setAvailableCredit(nextAvailableCredit);
+
+    if (!nextPromoCode) {
+      setApplyPromo(false);
+    }
+  };
+
   const handlePaymentSuccess = (msg) => {
+    clearPromoSessionState();
     setCart((prev) => prev.map((item) => ({ ...item, status: "SENT" })));
     setShowPaymentPopup(false);
     setSuccessMessage(msg);
@@ -240,6 +268,7 @@ function App() {
     }
 
     if (tid) {
+      clearPromoSessionState();
       setTableId(tid);
       loadCart(tid);
     }
@@ -709,21 +738,6 @@ function App() {
       0
     );
 
-    console.log("PROMO CODE:", localStorage.getItem("promoCode"));
-    console.log("PROMO AMOUNT:", localStorage.getItem("promoAmount"));
-    console.log("availableCredit:", localStorage.getItem("availableCredit"));
-    const promoCode = localStorage.getItem("promoCode");
-
-    const promoAmount =
-      promoCode && promoCode.trim() !== ""
-        ? Number(localStorage.getItem("promoAmount") || 0)
-        : 0;
-
-   const availableCredit =
-  promoCode && promoCode.trim() !== ""
-    ? Number(localStorage.getItem("availableCredit") || 0)
-    : 0;
-
     // GST Calculation
     const beforeGST = subTotal + serviceCharge;
 
@@ -828,20 +842,6 @@ function App() {
   const completeOrder = async (posOrderId, amount) => {
     try {
       console.log("[completeOrder] Using POS orderId:", posOrderId, "Amount:", amount);
-      console.log("PROMO CODE:", localStorage.getItem("promoCode"));
-      console.log("PROMO AMOUNT:", localStorage.getItem("promoAmount"));
-       console.log("availableCredit:", localStorage.getItem("availableCredit"));
-      const promoCode = localStorage.getItem("promoCode");
-
-      const promoAmount =
-        promoCode && promoCode.trim() !== ""
-          ? Number(localStorage.getItem("promoAmount") || 0)
-          : 0;
-
-      const availableCredit =
-  promoCode && promoCode.trim() !== ""
-    ? Number(localStorage.getItem("availableCredit") || 0)
-    : 0;
       // CALL UNIFIED BACKEND ROUTE
       const res = await fetch(`${API}/order/complete-online-payment`, {
         method: "POST",
@@ -902,22 +902,7 @@ function App() {
     setIsCartLoading(true);
     try {
 
-      console.log("PROMO CODE:", localStorage.getItem("promoCode"));
-      console.log("PROMO AMOUNT:", localStorage.getItem("promoAmount"));
-       console.log("availableCredit:", localStorage.getItem("availableCredit"));
-      const promoCode = localStorage.getItem("promoCode");
-
-      const promoAmount =
-        promoCode && promoCode.trim() !== ""
-          ? Number(localStorage.getItem("promoAmount") || 0)
-          : 0;
-
-         const availableCredit =
-  promoCode && promoCode.trim() !== ""
-    ? Number(localStorage.getItem("availableCredit") || 0)
-    : 0;
-
-      const payload = {
+const payload = {
 
         tableId: tableId,
 
@@ -1041,23 +1026,6 @@ console.log("CART:", cart);
     //  setShowOnlinePayment(false); 
     setIsCartLoading(true);
     try {
-
-      console.log("PROMO CODE:", localStorage.getItem("promoCode"));
-      console.log("PROMO AMOUNT:", localStorage.getItem("promoAmount"));
-       console.log("availableCredit:", localStorage.getItem("availableCredit"));
-
-      const promoCode = localStorage.getItem("promoCode");
-
-      const promoAmount =
-        promoCode && promoCode.trim() !== ""
-          ? Number(localStorage.getItem("promoAmount") || 0)
-          : 0;
-
-     const availableCredit =
-  promoCode && promoCode.trim() !== ""
-    ? Number(localStorage.getItem("availableCredit") || 0)
-    : 0;
-
       const payload = {
 
         tableId: tableId,
@@ -1117,22 +1085,6 @@ console.log("CART:", cart);
         if (data.orderId) {
           setCurrentOrderId(data.orderId);
         }
-
-        console.log("PROMO CODE:", localStorage.getItem("promoCode"));
-        console.log("PROMO AMOUNT:", localStorage.getItem("promoAmount"));
-         console.log("availableCredit:", localStorage.getItem("availableCredit"));
-
-        const promoCode = localStorage.getItem("promoCode");
-
-        const promoAmount =
-          promoCode && promoCode.trim() !== ""
-            ? Number(localStorage.getItem("promoAmount") || 0)
-            : 0;
-
-     const availableCredit =
-  promoCode && promoCode.trim() !== ""
-    ? Number(localStorage.getItem("availableCredit") || 0)
-    : 0;
 
         const subTotal = cart.reduce(
           (s, i) =>
@@ -1500,22 +1452,6 @@ console.log("CART:", cart);
   const gstAmount =
     beforeGST * (gstPercent / 100);
 
-  // Promo Amount
-  console.log("PROMO CODE:", localStorage.getItem("promoCode"));
-  console.log("PROMO AMOUNT:", localStorage.getItem("promoAmount"));
-   console.log("availableCredit:", localStorage.getItem("availableCredit"));
-  const promoCode = localStorage.getItem("promoCode");
-
-  const promoAmount =
-    promoCode && promoCode.trim() !== ""
-      ? Number(localStorage.getItem("promoAmount") || 0)
-      : 0;
-
-     const availableCredit =
-  promoCode && promoCode.trim() !== ""
-    ? Number(localStorage.getItem("availableCredit") || 0)
-    : 0;
-
   // Final Total
   const totalAmount = Math.max(
     0,
@@ -1620,10 +1556,7 @@ console.log("CART:", cart);
                     onClick={() => {
                       localStorage.removeItem("isLoggedIn");
                       localStorage.removeItem("qr_pos_user");
-
-                      // Clear promo details
-                      localStorage.removeItem("promoCode");
-                      localStorage.removeItem("promoAmount");
+                      clearPromoSessionState();
                       localStorage.removeItem("memberId");
 
                       window.location.reload();
@@ -2341,20 +2274,6 @@ console.log("CART:", cart);
                         className="payment-btn"
                         onClick={async () => {
                           try {
-                            console.log("PROMO CODE:", localStorage.getItem("promoCode"));
-                            console.log("PROMO AMOUNT:", localStorage.getItem("promoAmount"));
-                             console.log("availableCredit:", localStorage.getItem("availableCredit"));
-                            console.log("AVAILABLE CREDIT:", localStorage.getItem("availableCredit"));
-                            const promoCode = localStorage.getItem("promoCode");
-                            const promoAmount =
-                              promoCode && promoCode.trim() !== ""
-                                ? Number(localStorage.getItem("promoAmount") || 0)
-                                : 0;
-
-                             const availableCredit =
-  promoCode && promoCode.trim() !== ""
-    ? Number(localStorage.getItem("availableCredit") || 0)
-    : 0;
                             const user = JSON.parse(localStorage.getItem("qr_pos_user") || "{}");
                             await fetch(`${API}/order/mark-sent`, {
                               method: "POST",

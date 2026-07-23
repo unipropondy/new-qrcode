@@ -140,18 +140,10 @@ export default function LoginPage({ onLoginSuccess }) {
         localStorage.setItem("isLoggedIn", "true");
         localStorage.setItem("qr_pos_user", JSON.stringify(data.user));
 
-       if (data.user?.Promocode) {
-          localStorage.setItem("promoCode", data.user.Promocode);
-          localStorage.setItem("promoAmount", data.user.Promoamount || 0);
-           localStorage.setItem(
-    "availableCredit",
-    data.user.AvailableCredit || 0
-  );
-        } else {
-          localStorage.removeItem("promoCode");
-          localStorage.removeItem("promoAmount");
-          localStorage.removeItem("availableCredit");
-        }
+        localStorage.removeItem("promoCode");
+        localStorage.removeItem("promoAmount");
+        localStorage.removeItem("availableCredit");
+
         setSuccessUser(data.user.FullName || data.user.UserName);
         setShowSuccess(true);
         setTimeout(() => {
@@ -205,19 +197,9 @@ export default function LoginPage({ onLoginSuccess }) {
       if (data.success) {
         localStorage.setItem("qr_pos_user", JSON.stringify(data.user));
 
-        if (data.user?.Promocode && data.user.Promocode.trim() !== "") {
-
-  localStorage.setItem("promoCode", data.user.Promocode);
-  localStorage.setItem("promoAmount", data.user.Promoamount || 0);
-  localStorage.setItem("availableCredit", data.user.AvailableCredit || 0);
-
-} else {
-
-  localStorage.removeItem("promoCode");
-  localStorage.removeItem("promoAmount");
-  localStorage.removeItem("availableCredit");
-
-}
+        localStorage.removeItem("promoCode");
+        localStorage.removeItem("promoAmount");
+        localStorage.removeItem("availableCredit");
 
         setSuccessUser(data.user.FullName || data.user.UserName || suUsername.trim());
         setSignedUpUser(data.user);
@@ -533,14 +515,9 @@ export default function LoginPage({ onLoginSuccess }) {
                 // Login session create
                 localStorage.setItem("isLoggedIn", "true");
                 localStorage.setItem("qr_pos_user", JSON.stringify(signedUpUser));
-
-                if (signedUpUser?.Promocode) {
-                  localStorage.setItem("promoCode", signedUpUser.Promocode);
-                  localStorage.setItem("promoAmount", signedUpUser.Promoamount || 0);
-                } else {
-                  localStorage.removeItem("promoCode");
-                  localStorage.removeItem("promoAmount");
-                }
+                localStorage.removeItem("promoCode");
+                localStorage.removeItem("promoAmount");
+                localStorage.removeItem("availableCredit");
 
                 // QR table details save
                 const params = new URLSearchParams(window.location.search);
